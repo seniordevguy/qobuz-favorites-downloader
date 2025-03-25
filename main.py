@@ -2,13 +2,18 @@ import logging
 import os
 import schedule
 import time
-from threading import Thread, Event, Lock
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from qobuz_dl.core import QobuzDL
 from dotenv import load_dotenv
 import qobuz.api as qobuz_api
 import qobuz as qobuz_cl
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 qobuz_email = os.environ["QOBUZ_EMAIL"]
@@ -17,8 +22,9 @@ music_directory = os.environ.get("MUSIC_DIRECTORY", "/downloads")
 config_directory = os.environ.get("CONFIG_DIRECTORY", "/config")
 quality = int(os.environ.get("QUALITY", 27))
 
-# Use a threading.Lock for a safer thread locking mechanism
-job_lock = Lock()
+# Use a threading.Lock for thread synchronization
+job_lock = threading.Lock()
+job_running = threading.Event()
 
 qobuz = QobuzDL(
     directory=music_directory,
@@ -29,7 +35,7 @@ qobuz = QobuzDL(
 
 def get_user_favorites(user: qobuz_cl.User, fav_type):
     '''
-    Returns all user favorites
+    Returns all user favorites using pagination
 
     Parameters
     ----------
@@ -40,59 +46,69 @@ def get_user_favorites(user: qobuz_cl.User, fav_type):
     '''
     limit = 50
     offset = 0
-    favorites = list()
-    while True:
-        favs = user.favorites_get(fav_type=fav_type, limit=limit, offset=offset)
-        if not favs:
-            break
-        favorites += favs
-        offset += limit
+    favorites = []
+    
+    try:
+        while True:
+            favs = user.favorites_get(fav_type=fav_type, limit=limit, offset=offset)
+            if not favs:
+                break
+            favorites.extend(favs)
+            offset += limit
+            logger.debug(f"Retrieved {len(favs)} {fav_type} favorites (total: {len(favorites)})")
+    except Exception as e:
+        logger.error(f"Error retrieving {fav_type} favorites: {e}")
+    
     return favorites
 
-def download_albums(qobuz: QobuzDL, user: qobuz_cl.User, albums: list[qobuz_cl.Album]):
-    successful_albums = []
-    failure_albums = []
-    for album in albums:
-        try:
-            # attempt to download the album
-            qobuz.download_from_id(album.id)
-            # if download is successful, remove from favorites
-            user.favorites_del(album)
-            successful_albums.append(album)
-        except Exception as e:
-            failure_albums.append(album)
-            logging.error(f"An error occurred with album ID {album.id}: {e}")
-    return successful_albums, failure_albums
+def download_item(args):
+    """Worker function to download a single item"""
+    qobuz_dl, user, item, is_album = args
+    try:
+        qobuz_dl.download_from_id(item.id, is_album)
+        user.favorites_del(item)
+        return (True, item)
+    except Exception as e:
+        logger.error(f"Failed to download item ID {item.id}: {e}")
+        return (False, item)
 
-def download_tracks(qobuz: QobuzDL, user: qobuz_cl.User, tracks: list[qobuz_cl.Track]):
-    successful_tracks = []
-    failure_tracks = []
-    for track in tracks:
-        try:
-            # attempt to download the track
-            qobuz.download_from_id(track.id, False)
-            # if download is successful, remove from favorites
-            user.favorites_del(track)
-            successful_tracks.append(track)
-        except Exception as e:
-            failure_tracks.append(track)
-            logging.error(f"An error occurred with track ID {track.id}: {e}")
-    return successful_tracks, failure_tracks
-
-def download_artists(qobuz: QobuzDL, user: qobuz_cl.User, artists: list[qobuz_cl.Artist]):
-    successful_artists = []
-    failure_artists = []
-    for artist in artists:
-        try:
-            # attempt to download the artist
-            qobuz.download_from_id(artist.id, False)
-            # if download is successful, remove from favorites
-            user.favorites_del(artist)
-            successful_artists.append(artist)
-        except Exception as e:
-            failure_artists.append(artist)
-            logging.error(f"An error occurred with artist ID {artist.id}: {e}")
-    return successful_artists, failure_artists
+def batch_download(qobuz_dl, user, items, is_album=True, max_workers=3):
+    """
+    Download items in parallel batches with a limited number of workers
+    """
+    successful_items = []
+    failed_items = []
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Create a list of tasks with all necessary information
+        tasks = [(qobuz_dl, user, item, is_album) for item in items]
+        
+        # Process items in batches to avoid overwhelming the system
+        batch_size = min(10, len(items))
+        
+        for i in range(0, len(tasks), batch_size):
+            batch = tasks[i:i+batch_size]
+            logger.info(f"Processing batch of {len(batch)} items ({i+1}-{min(i+batch_size, len(items))} of {len(items)})")
+            
+            # Submit all tasks in this batch
+            futures = [executor.submit(download_item, task) for task in batch]
+            
+            # Process results as they complete
+            for future in futures:
+                try:
+                    success, item = future.result(timeout=600)  # 10-minute timeout per item
+                    if success:
+                        successful_items.append(item)
+                    else:
+                        failed_items.append(item)
+                except Exception as e:
+                    logger.error(f"Worker thread exception: {e}")
+                    
+            # Small delay between batches to let system resources recover
+            if i + batch_size < len(tasks):
+                time.sleep(2)
+    
+    return successful_items, failed_items
 
 def process_favorites():
     try:
@@ -105,59 +121,72 @@ def process_favorites():
         qobuz_user = qobuz_cl.User(qobuz_email, qobuz_password)
 
         # retrieve favorites
-        favorite_albums = get_user_favorites(qobuz_user, fav_type="albums")
+        logger.info("Fetching favorite items from Qobuz...")
         favorite_tracks = get_user_favorites(qobuz_user, fav_type="tracks")
+        favorite_albums = get_user_favorites(qobuz_user, fav_type="albums")
         favorite_artists = get_user_favorites(qobuz_user, fav_type="artists")
 
-        logging.info(f"Processing {len(favorite_albums)} albums...")
-        logging.info(f"Processing {len(favorite_tracks)} tracks...")
-        logging.info(f"Processing {len(favorite_artists)} artists...")
+        logger.info(f"Found {len(favorite_tracks)} tracks, {len(favorite_albums)} albums, {len(favorite_artists)} artists")
 
-        # download new favorites
-        successful_tracks, failure_tracks = download_tracks(qobuz, qobuz_user, favorite_tracks)
-        successful_albums, failure_albums = download_albums(qobuz, qobuz_user, favorite_albums)
-        successful_artists, failure_artists = download_artists(qobuz, qobuz_user, favorite_artists)
+        # download favorites using the optimized batch method
+        if favorite_tracks:
+            logger.info("Processing tracks...")
+            successful_tracks, failed_tracks = batch_download(qobuz, qobuz_user, favorite_tracks, is_album=False, max_workers=2)
+            logger.info(f"Tracks: {len(successful_tracks)} successful, {len(failed_tracks)} failed")
 
-        # log results
-        logging.info(f"Successfully downloaded {len(successful_tracks)} tracks.")
-        logging.info(f"Successfully downloaded {len(successful_albums)} albums.")
-        logging.info(f"Successfully downloaded {len(successful_artists)} artists.")
+        if favorite_albums:
+            logger.info("Processing albums...")
+            successful_albums, failed_albums = batch_download(qobuz, qobuz_user, favorite_albums, is_album=True, max_workers=2)
+            logger.info(f"Albums: {len(successful_albums)} successful, {len(failed_albums)} failed")
 
-        logging.warning(f"Failed to download {len(failure_tracks)} tracks.")
-        logging.warning(f"Failed to download {len(failure_albums)} albums.")
-        logging.warning(f"Failed to download {len(failure_artists)} artists.")
+        if favorite_artists:
+            logger.info("Processing artists...")
+            successful_artists, failed_artists = batch_download(qobuz, qobuz_user, favorite_artists, is_album=False, max_workers=1)
+            logger.info(f"Artists: {len(successful_artists)} successful, {len(failed_artists)} failed")
+
     except Exception as e:
-        # handle exceptions (e.g., network issues, data access problems)
-        logging.error(f"An error occurred: {e}")
+        logger.error(f"Process favorites error: {e}", exc_info=True)
+    finally:
+        # Ensure we always clear the running flag
+        job_running.clear()
 
 def job():
-    if job_lock.locked():
-        logging.info("A job is already running. Exiting this schedule.")
+    """Main job function that runs on schedule"""
+    if job_running.is_set():
+        logger.info("A job is already running. Skipping this execution.")
         return
 
-    # acquire the lock
-    with job_lock:
-        logging.info("Job started!")
+    # Set the running flag first
+    job_running.set()
+    logger.info("Job started!")
+    
+    try:
         process_favorites()
-        logging.info("Job finished!")
+    except Exception as e:
+        logger.error(f"Unhandled exception in job: {e}", exc_info=True)
+    finally:
+        logger.info("Job finished!")
+        # Clear the running flag no matter what
+        job_running.clear()
 
-def run_continuously(interval=1):
-    """Continuously run, while executing pending jobs at each elapsed time interval."""
-    cease_continuous_run = Event()
+def run_scheduler():
+    """Run the scheduler in the main thread"""
+    logger.info("Starting scheduler. First job will run immediately.")
+    
+    # Run the job immediately on startup
+    threading.Thread(target=job, daemon=True).start()
+    
+    # Then schedule it to run every 30 minutes
+    schedule.every(30).minutes.do(job)
+    
+    try:
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("Scheduler stopped by user")
+    except Exception as e:
+        logger.error(f"Scheduler error: {e}", exc_info=True)
 
-    class ScheduleThread(Thread):
-        @classmethod
-        def run(cls):
-            while not cease_continuous_run.is_set():
-                schedule.run_pending()
-                time.sleep(interval)
-
-    continuous_thread = ScheduleThread()
-    continuous_thread.start()
-    return cease_continuous_run
-
-# Schedule the job
-schedule.every(30).minutes.do(job)
-
-# Start the background thread
-stop_run_continuously = run_continuously()
+if __name__ == "__main__":
+    run_scheduler()
