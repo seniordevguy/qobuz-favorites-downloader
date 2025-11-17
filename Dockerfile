@@ -1,16 +1,45 @@
-# Use an official Python runtime as a parent image
-FROM --platform=linux/amd64 python:3.12.3-alpine
+# Multi-stage build for smaller image size and better caching
+FROM --platform=linux/amd64 python:3.12-alpine AS builder
 
-# Set the working directory in the container
+# Install build dependencies
+RUN apk add --no-cache gcc musl-dev libffi-dev
+
+# Set the working directory
 WORKDIR /usr/src/app
 
-# Copy the current directory contents into the container at /usr/src/app
-COPY . .
+# Copy only requirements first for better layer caching
+COPY requirements.txt .
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-# RUN pip install git+https://github.com/fdenivac/python-qobuz
+# Final stage - minimal runtime image
+FROM --platform=linux/amd64 python:3.12-alpine
+
+# Install runtime dependencies only
+RUN apk add --no-cache libffi
+
+# Set the working directory
+WORKDIR /usr/src/app
+
+# Copy Python packages from builder
+COPY --from=builder /root/.local /root/.local
+
+# Copy application code
+COPY main.py .
+COPY web_ui.py .
+COPY templates ./templates
+COPY static ./static
+
+# Make sure scripts in .local are usable
+ENV PATH=/root/.local/bin:$PATH
+
+# Expose web UI port
+EXPOSE 5000
+
+# Add healthcheck
+HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health').read()" || exit 1
 
 # Run app.py when the container launches
-CMD ["python", "./main.py"]
+CMD ["python", "-u", "./main.py"]

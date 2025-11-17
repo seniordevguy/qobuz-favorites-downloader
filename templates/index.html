@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qobuz Downloader - Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .card h2 {
+            font-size: 1.3em;
+            margin-bottom: 16px;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 8px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-idle {
+            background: #10b981;
+            color: white;
+        }
+
+        .status-running {
+            background: #3b82f6;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        .status-error {
+            background: #ef4444;
+            color: white;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            color: #6b7280;
+            font-weight: 500;
+        }
+
+        .stat-value {
+            color: #111827;
+            font-weight: 600;
+        }
+
+        .stat-value.success {
+            color: #10b981;
+        }
+
+        .stat-value.error {
+            color: #ef4444;
+        }
+
+        .error-message {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 12px;
+            font-size: 0.9em;
+            word-break: break-word;
+        }
+
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 30px;
+            opacity: 0.9;
+        }
+
+        .refresh-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 0.9em;
+            color: #6b7280;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .loading {
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="refresh-indicator" id="refreshIndicator">
+        Auto-refresh: <span id="countdown">5</span>s
+    </div>
+
+    <div class="container">
+        <div class="header">
+            <h1>Qobuz Downloader</h1>
+            <p>Automatic favorites downloader dashboard</p>
+        </div>
+
+        <div class="dashboard">
+            <div class="card">
+                <h2>Current Status</h2>
+                <div class="stat-row">
+                    <span class="stat-label">Status</span>
+                    <span class="stat-value">
+                        <span id="statusBadge" class="status-badge status-idle">IDLE</span>
+                    </span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Last Run</span>
+                    <span class="stat-value" id="lastRun">Never</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Next Run</span>
+                    <span class="stat-value" id="nextRun">Calculating...</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Pending Favorites</h2>
+                <div class="stat-row">
+                    <span class="stat-label">Tracks</span>
+                    <span class="stat-value" id="favTracks">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Albums</span>
+                    <span class="stat-value" id="favAlbums">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Artists</span>
+                    <span class="stat-value" id="favArtists">0</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Download Statistics</h2>
+                <div class="stat-row">
+                    <span class="stat-label">Tracks Downloaded</span>
+                    <span class="stat-value success" id="tracksDownloaded">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Albums Downloaded</span>
+                    <span class="stat-value success" id="albumsDownloaded">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Artists Downloaded</span>
+                    <span class="stat-value success" id="artistsDownloaded">0</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Failures</h2>
+                <div class="stat-row">
+                    <span class="stat-label">Track Failures</span>
+                    <span class="stat-value error" id="tracksFailed">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Album Failures</span>
+                    <span class="stat-value error" id="albumsFailed">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Artist Failures</span>
+                    <span class="stat-value error" id="artistsFailed">0</span>
+                </div>
+                <div id="errorContainer"></div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Qobuz Favorites Downloader | Optimized for low-power NAS</p>
+        </div>
+    </div>
+
+    <script>
+        let countdown = 5;
+        let countdownInterval;
+
+        function updateStatus() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    // Update status badge
+                    const statusBadge = document.getElementById('statusBadge');
+                    statusBadge.textContent = data.is_running ?
+                        data.current_status.toUpperCase() : 'IDLE';
+
+                    statusBadge.className = 'status-badge';
+                    if (data.is_running) {
+                        statusBadge.classList.add('status-running');
+                    } else if (data.current_status === 'error') {
+                        statusBadge.classList.add('status-error');
+                    } else {
+                        statusBadge.classList.add('status-idle');
+                    }
+
+                    // Update timestamps
+                    document.getElementById('lastRun').textContent = data.last_run;
+                    document.getElementById('nextRun').textContent = data.next_run;
+
+                    // Update favorites count
+                    document.getElementById('favTracks').textContent = data.favorites_count.tracks;
+                    document.getElementById('favAlbums').textContent = data.favorites_count.albums;
+                    document.getElementById('favArtists').textContent = data.favorites_count.artists;
+
+                    // Update stats
+                    document.getElementById('tracksDownloaded').textContent = data.stats.tracks_downloaded;
+                    document.getElementById('albumsDownloaded').textContent = data.stats.albums_downloaded;
+                    document.getElementById('artistsDownloaded').textContent = data.stats.artists_downloaded;
+                    document.getElementById('tracksFailed').textContent = data.stats.tracks_failed;
+                    document.getElementById('albumsFailed').textContent = data.stats.albums_failed;
+                    document.getElementById('artistsFailed').textContent = data.stats.artists_failed;
+
+                    // Update error message
+                    const errorContainer = document.getElementById('errorContainer');
+                    if (data.stats.last_error) {
+                        errorContainer.innerHTML = `<div class="error-message">Last Error: ${data.stats.last_error}</div>`;
+                    } else {
+                        errorContainer.innerHTML = '';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching status:', error);
+                });
+        }
+
+        function resetCountdown() {
+            countdown = 5;
+            document.getElementById('countdown').textContent = countdown;
+        }
+
+        function startCountdown() {
+            countdownInterval = setInterval(() => {
+                countdown--;
+                document.getElementById('countdown').textContent = countdown;
+
+                if (countdown <= 0) {
+                    updateStatus();
+                    resetCountdown();
+                }
+            }, 1000);
+        }
+
+        // Initial update
+        updateStatus();
+        startCountdown();
+    </script>
+</body>
+</html>

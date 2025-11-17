@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  qobuz-downloader:
+    image: rgallione/qobuz-downloader:latest
+    container_name: qobuz-downloader
+    environment:
+      # Required - Add your Qobuz credentials
+      - QOBUZ_EMAIL=your-email@example.com
+      - QOBUZ_PASSWORD=your-password
+
+      # Optional - Performance tuning for low-power NAS
+      - QUALITY=27
+      - CHECK_INTERVAL_MINUTES=30
+      - MAX_WORKERS_TRACKS=1
+      - MAX_WORKERS_ALBUMS=1
+      - MAX_WORKERS_ARTISTS=1
+      - BATCH_SIZE=10
+
+      # Optional - Web UI settings
+      - ENABLE_WEB_UI=true
+      - WEB_UI_PORT=5000
+    volumes:
+      # Update these paths to match your system
+      - ./downloads:/downloads
+      - ./config:/config
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health').read()"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
