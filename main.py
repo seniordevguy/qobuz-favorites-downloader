@@ -4,22 +4,50 @@ import schedule
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from logging.handlers import RotatingFileHandler
 from qobuz_dl.core import QobuzDL
 from dotenv import load_dotenv
 import qobuz.api as qobuz_api
 import qobuz as qobuz_cl
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 load_dotenv()
+
+# Logging configuration
+log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+log_file_max_mb = int(os.environ.get("LOG_FILE_MAX_MB", 10))
+log_file_backup_count = int(os.environ.get("LOG_FILE_BACKUP_COUNT", 3))
+config_directory = os.environ.get("CONFIG_DIRECTORY", "/config")
+
+# Configure root logger
+logger = logging.getLogger(__name__)
+logger.setLevel(getattr(logging, log_level, logging.INFO))
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(getattr(logging, log_level, logging.INFO))
+console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
+
+# File handler with rotation (if enabled)
+if log_file_max_mb > 0:
+    log_file_path = os.path.join(config_directory, "qobuz-downloader.log")
+    file_handler = RotatingFileHandler(
+        log_file_path,
+        maxBytes=log_file_max_mb * 1024 * 1024,  # Convert MB to bytes
+        backupCount=log_file_backup_count
+    )
+    file_handler.setLevel(getattr(logging, log_level, logging.INFO))
+    file_handler.setFormatter(console_formatter)
+    logger.addHandler(file_handler)
+    logger.info(f"Logging to file: {log_file_path} (max {log_file_max_mb}MB, {log_file_backup_count} backups)")
+else:
+    logger.info("File logging disabled")
 
 qobuz_email = os.environ["QOBUZ_EMAIL"]
 qobuz_password = os.environ["QOBUZ_PASSWORD"]
 music_directory = os.environ.get("MUSIC_DIRECTORY", "/downloads")
-config_directory = os.environ.get("CONFIG_DIRECTORY", "/config")
+# config_directory already loaded above for logging
 quality = int(os.environ.get("QUALITY", 27))
 
 # CPU-friendly settings for low-power NAS (defaults optimized for 4-core with arr stack)
@@ -264,7 +292,7 @@ if __name__ == "__main__":
     if enable_web_ui:
         logger.info(f"Starting web UI on port {web_ui_port}")
         from web_ui import create_app
-        web_app = create_app(app_state, job_running)
+        web_app = create_app(app_state, job_running, job_function=job)
 
         # Run Flask in a separate thread
         web_thread = threading.Thread(

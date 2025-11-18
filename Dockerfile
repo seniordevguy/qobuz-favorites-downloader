@@ -29,7 +29,6 @@ COPY --from=builder /root/.local /root/.local
 COPY main.py .
 COPY web_ui.py .
 COPY templates ./templates
-COPY static ./static
 
 # Make sure scripts in .local are usable
 ENV PATH=/root/.local/bin:$PATH

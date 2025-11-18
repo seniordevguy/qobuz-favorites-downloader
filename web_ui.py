@@ -1,8 +1,9 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 import time
 from datetime import datetime
+import threading
 
-def create_app(app_state, job_running):
+def create_app(app_state, job_running, job_function=None):
     """Create and configure the Flask app"""
     app = Flask(__name__)
 
@@ -36,6 +37,29 @@ def create_app(app_state, job_running):
     def get_stats():
         """Get download statistics"""
         return jsonify(app_state["stats"])
+
+    @app.route('/api/trigger', methods=['POST'])
+    def trigger_job():
+        """Manually trigger a download job"""
+        if job_running.is_set():
+            return jsonify({
+                "success": False,
+                "message": "A job is already running"
+            }), 409
+
+        if job_function is None:
+            return jsonify({
+                "success": False,
+                "message": "Job function not available"
+            }), 500
+
+        # Start the job in a separate thread
+        threading.Thread(target=job_function, daemon=True).start()
+
+        return jsonify({
+            "success": True,
+            "message": "Download job triggered successfully"
+        }), 200
 
     def format_timestamp(ts):
         """Convert timestamp to readable format"""

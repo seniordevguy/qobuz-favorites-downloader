@@ -52,17 +52,25 @@ WEB_UI_PORT=5000
 - `BATCH_SIZE`: Number of items to process in each batch (default: 10)
 - `ENABLE_WEB_UI`: Enable the web dashboard (default: true)
 - `WEB_UI_PORT`: Port for the web UI (default: 5000)
+- `LOG_LEVEL`: Logging verbosity - DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
+- `LOG_FILE_MAX_MB`: Maximum log file size in MB before rotation, 0 to disable file logging (default: 10)
+- `LOG_FILE_BACKUP_COUNT`: Number of rotated log files to keep (default: 3)
 
 ## Web UI
 
 The web UI provides a real-time dashboard showing:
-- Current download status
-- Pending favorites count
+- Current download status with visual indicators
+- **Manual trigger button** to download immediately (no need to wait for schedule)
+- Pending favorites count (tracks, albums, artists)
 - Download statistics (successful/failed)
 - Last run and next scheduled run times
-- Error messages
+- Error messages with details
+- Auto-refresh every 5 seconds
 
 Access the web UI at `http://your-nas-ip:5000` (or your configured port).
+
+### Manual Downloads
+Click the "Download Now" button in the web UI to immediately trigger a download job. The button will be disabled while a job is running.
 
 ## Docker Compose Example
 
@@ -107,6 +115,23 @@ This application is optimized for 4-core CPUs running alongside arr stack applic
 5. **Configurable check intervals** let you balance freshness vs resource usage
 
 If you have more CPU headroom, you can increase `MAX_WORKERS_*` values to 2-3 for faster downloads.
+
+## Logging
+
+Logs are stored in the `/config` directory as `qobuz-downloader.log` with automatic rotation:
+- Log files automatically rotate when they reach the configured size (default: 10MB)
+- Old logs are kept according to `LOG_FILE_BACKUP_COUNT` (default: 3 backups)
+- This prevents logs from filling up your NAS storage
+- Set `LOG_FILE_MAX_MB=0` to disable file logging and only log to console
+- Adjust `LOG_LEVEL` for more or less verbose logging
+
+## Getting Started
+
+1. Copy `.env.example` to `.env` and fill in your Qobuz credentials
+2. Update directory paths in `docker-compose.yml` to match your system
+3. Run `docker-compose up -d`
+4. Access the web UI at `http://your-nas-ip:5000`
+5. The first download will start immediately, then repeat every 30 minutes (or your configured interval)
 
 ## Questions
 Reach out to @jeremywade1337 on Telegram if you have any questions
