@@ -86,11 +86,18 @@ LOG_FILE_BACKUP_COUNT=3
 The web UI provides a real-time dashboard showing:
 - Current download status with visual indicators
 - **Manual trigger button** to download immediately (no need to wait for schedule)
+- **Pause/Resume** - Pause active downloads and resume when ready
+- **Download queue** - View pending, processing, and completed items
+- **Download history** - Track all successful downloads
+- **Failed items** with retry functionality
+- **Log viewer** - View and filter application logs in real-time
+- **Dark mode** - Toggle between light and dark themes
 - Pending favorites count (tracks, albums, artists)
 - Download statistics (successful/failed)
 - Last run and next scheduled run times
 - Error messages with details
 - Auto-refresh every 5 seconds
+- **Mobile PWA** - Install as app on mobile devices
 
 Access the web UI at `http://your-nas-ip:5000` (or your configured port).
 
@@ -105,6 +112,34 @@ When `WEB_UI_USERNAME` and `WEB_UI_PASSWORD` are configured:
 
 ### Manual Downloads
 Click the "Download Now" button in the web UI to immediately trigger a download job. The button will be disabled while a job is running. Rate limiting prevents accidental rapid triggers.
+
+### Download Queue & Pause/Resume
+- View the download queue in the "Queue" tab to see pending, processing, and completed items
+- Use the "Pause" button to temporarily pause downloads - useful when you need system resources
+- Resume downloads at any time - the job continues where it left off
+
+### Failed Downloads & Retry
+- Failed downloads are tracked in the "Failed" tab with error messages
+- Click "Retry All" to re-queue all failed items for another download attempt
+- Clear failed items when they're no longer needed
+
+### Log Viewer
+- View application logs in real-time in the "Logs" tab
+- Filter by log level (Debug, Info, Warning, Error)
+- Download the full log file for troubleshooting
+- Auto-scroll option to follow new log entries
+
+### Dark Mode
+- Toggle dark mode using the sun/moon icon in the top-left corner
+- Theme preference is saved and persists across sessions
+- Both dashboard and login page support dark mode
+
+### Mobile App (PWA)
+The web UI can be installed as a Progressive Web App on mobile devices:
+1. Open the dashboard in your mobile browser
+2. When prompted, tap "Install" or use the browser's "Add to Home Screen" option
+3. Access the app directly from your home screen with an app-like experience
+4. Works offline for viewing cached data
 
 ## Docker Compose Example
 

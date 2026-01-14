@@ -95,6 +95,7 @@ if enable_web_ui and not (web_ui_username and web_ui_password):
 job_lock = threading.Lock()
 job_running = threading.Event()
 state_lock = threading.Lock()
+pause_event = threading.Event()  # For pause/resume functionality
 
 # Persistence files
 STATS_FILE = os.path.join(config_directory, "stats.json")
@@ -166,7 +167,15 @@ app_state: dict[str, Any] = {
         "current_name": None,
         "progress": {"current": 0, "total": 0},
         "batch_progress": {"current": 0, "total": 0}
-    }
+    },
+    "is_paused": False,
+    "queue": {
+        "pending": 0,
+        "processing": 0,
+        "completed": 0,
+        "failed": 0
+    },
+    "queue_items": []
 }
 
 # Application settings for display (read-only)
@@ -291,6 +300,109 @@ def clear_all_stats() -> None:
     with state_lock:
         app_state["stats"] = get_default_stats()
         save_stats(app_state["stats"])
+
+
+def toggle_pause() -> bool:
+    """Toggle pause state for downloads."""
+    with state_lock:
+        if pause_event.is_set():
+            pause_event.clear()
+            app_state["is_paused"] = False
+            logger.info("Downloads resumed")
+        else:
+            pause_event.set()
+            app_state["is_paused"] = True
+            logger.info("Downloads paused")
+        return app_state["is_paused"]
+
+
+def check_pause() -> None:
+    """Block if paused, until resumed."""
+    while pause_event.is_set() and not shutdown_event.is_set():
+        time.sleep(0.5)
+
+
+def retry_failed_items() -> tuple[bool, str]:
+    """Retry all failed download items."""
+    with state_lock:
+        failed_items = app_state.get("failed_items", [])
+        if not failed_items:
+            return False, "No failed items to retry"
+
+        # Move failed items back to retry queue
+        count = len(failed_items)
+        app_state["retry_queue"] = list(failed_items)
+        app_state["failed_items"] = []
+
+        # Save cleaned history
+        save_history({
+            "downloads": app_state["history"],
+            "failed": []
+        })
+
+    logger.info(f"Queued {count} failed items for retry")
+    return True, f"Queued {count} items for retry. Start a new download to process them."
+
+
+def get_queue_info() -> dict[str, Any]:
+    """Get current queue information."""
+    with state_lock:
+        return {
+            "items": app_state.get("queue_items", [])[:50],  # Limit to 50 items
+            "stats": app_state.get("queue", {
+                "pending": 0,
+                "processing": 0,
+                "completed": 0,
+                "failed": 0
+            })
+        }
+
+
+def update_queue(
+    pending: int | None = None,
+    processing: int | None = None,
+    completed: int | None = None,
+    failed: int | None = None,
+    items: list[dict[str, Any]] | None = None
+) -> None:
+    """Update queue statistics."""
+    with state_lock:
+        if pending is not None:
+            app_state["queue"]["pending"] = pending
+        if processing is not None:
+            app_state["queue"]["processing"] = processing
+        if completed is not None:
+            app_state["queue"]["completed"] = completed
+        if failed is not None:
+            app_state["queue"]["failed"] = failed
+        if items is not None:
+            app_state["queue_items"] = items
+
+
+def add_to_queue(name: str, item_type: str, status: str = "pending") -> None:
+    """Add an item to the visible queue."""
+    with state_lock:
+        app_state["queue_items"].insert(0, {
+            "name": name,
+            "type": item_type,
+            "status": status
+        })
+        # Limit queue size for display
+        if len(app_state["queue_items"]) > 100:
+            app_state["queue_items"] = app_state["queue_items"][:100]
+
+
+def clear_queue() -> None:
+    """Clear the queue display."""
+    with state_lock:
+        app_state["queue_items"] = []
+        app_state["queue"] = {
+            "pending": 0,
+            "processing": 0,
+            "completed": 0,
+            "failed": 0
+        }
+
 
 qobuz = QobuzDL(
     directory=music_directory,
@@ -422,8 +534,13 @@ def batch_download(
     failed_items: list[Any] = []
     total_items = len(items)
 
-    # Update activity with total count
+    # Update activity and queue with total count
     update_activity(current_type=item_type, progress_total=total_items, progress_current=0)
+    update_queue(pending=total_items, processing=0, completed=0, failed=0)
+
+    # Build initial queue items list
+    queue_items = [{"name": get_item_name(item, item_type), "type": item_type, "status": "pending"} for item in items[:50]]
+    update_queue(items=queue_items)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Create a list of tasks with all necessary information
@@ -435,6 +552,14 @@ def batch_download(
         current_batch_num = 0
 
         for i in range(0, len(tasks), effective_batch_size):
+            # Check for pause
+            check_pause()
+
+            # Check for shutdown
+            if shutdown_event.is_set():
+                logger.info("Shutdown requested, stopping batch download")
+                break
+
             current_batch_num += 1
             batch = tasks[i:i+effective_batch_size]
             logger.info(f"Processing batch of {len(batch)} items ({i+1}-{min(i+effective_batch_size, len(items))} of {len(items)})")
@@ -447,26 +572,42 @@ def batch_download(
 
             # Process results as they complete
             for future in futures_to_items:
+                # Check for pause between items
+                check_pause()
+
                 item = futures_to_items[future]
                 item_name = get_item_name(item, item_type)
                 item_id = str(getattr(item, 'id', 'unknown'))
 
                 # Update current item being processed
                 update_activity(current_name=item_name)
+                update_queue(processing=1)
 
                 try:
                     success, result_item = future.result(timeout=DOWNLOAD_TIMEOUT_SECONDS)
                     if success:
                         successful_items.append(result_item)
                         add_to_history(item_name, item_type, item_id, success=True)
+                        update_queue(
+                            completed=len(successful_items),
+                            pending=total_items - len(successful_items) - len(failed_items)
+                        )
                     else:
                         failed_items.append(result_item)
                         add_to_history(item_name, item_type, item_id, success=False)
+                        update_queue(
+                            failed=len(failed_items),
+                            pending=total_items - len(successful_items) - len(failed_items)
+                        )
                 except Exception as e:
                     logger.error(f"Worker thread exception: {e}")
                     update_stats("last_error", value=str(e))
                     failed_items.append(item)
                     add_to_history(item_name, item_type, item_id, success=False)
+                    update_queue(
+                        failed=len(failed_items),
+                        pending=total_items - len(successful_items) - len(failed_items)
+                    )
 
                 # Update progress
                 completed = len(successful_items) + len(failed_items)
@@ -552,6 +693,7 @@ def process_favorites() -> None:
         update_state("current_status", "idle")
         update_state("last_run", time.time())
         clear_activity()
+        clear_queue()
 
     except Exception as e:
         logger.error(f"Process favorites error: {e}", exc_info=True)
@@ -560,7 +702,12 @@ def process_favorites() -> None:
     finally:
         # Ensure we always clear the running flag and activity
         clear_activity()
+        clear_queue()
         job_running.clear()
+        # Clear pause state when job ends
+        pause_event.clear()
+        with state_lock:
+            app_state["is_paused"] = False
 
 def job() -> None:
     """Main job function that runs on schedule."""
@@ -643,6 +790,10 @@ if __name__ == "__main__":
         auth_status = "enabled" if (web_ui_username and web_ui_password) else "DISABLED (not recommended)"
         logger.info(f"Starting web UI on port {web_ui_port} (authentication: {auth_status})")
         from web_ui import create_app
+
+        # Determine log file path
+        log_file = os.path.join(config_directory, "qobuz-downloader.log") if log_file_max_mb > 0 else None
+
         web_app = create_app(
             app_state,
             job_running,
@@ -653,7 +804,11 @@ if __name__ == "__main__":
             app_settings=app_settings,
             clear_history_func=clear_history,
             clear_failed_func=clear_failed_items,
-            clear_stats_func=clear_all_stats
+            clear_stats_func=clear_all_stats,
+            pause_func=toggle_pause,
+            retry_failed_func=retry_failed_items,
+            get_queue_func=get_queue_info,
+            log_file_path=log_file
         )
 
         # Run Flask in a separate thread

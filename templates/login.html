@@ -4,7 +4,45 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Qobuz Downloader - Login</title>
+    <!-- PWA Support -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Qobuz DL">
     <style>
+        :root {
+            --bg-gradient-start: #667eea;
+            --bg-gradient-end: #764ba2;
+            --card-bg: #ffffff;
+            --card-shadow: rgba(0, 0, 0, 0.2);
+            --text-primary: #333333;
+            --text-secondary: #6b7280;
+            --text-muted: #9ca3af;
+            --border-color: #e5e7eb;
+            --input-bg: #ffffff;
+            --input-border: #e5e7eb;
+            --input-focus: #667eea;
+            --error-bg: #fee2e2;
+            --error-text: #991b1b;
+        }
+
+        [data-theme="dark"] {
+            --bg-gradient-start: #1a1a2e;
+            --bg-gradient-end: #16213e;
+            --card-bg: #1f2937;
+            --card-shadow: rgba(0, 0, 0, 0.5);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --border-color: #374151;
+            --input-bg: #374151;
+            --input-border: #4b5563;
+            --input-focus: #60a5fa;
+            --error-bg: #450a0a;
+            --error-text: #fca5a5;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -13,21 +51,23 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 20px;
+            transition: background 0.3s ease;
         }
 
         .login-container {
-            background: white;
+            background: var(--card-bg);
             border-radius: 12px;
             padding: 40px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 10px 30px var(--card-shadow);
             width: 100%;
             max-width: 400px;
+            transition: background 0.3s ease, box-shadow 0.3s ease;
         }
 
         .login-header {
@@ -37,12 +77,12 @@
 
         .login-header h1 {
             font-size: 1.8em;
-            color: #333;
+            color: var(--text-primary);
             margin-bottom: 8px;
         }
 
         .login-header p {
-            color: #6b7280;
+            color: var(--text-secondary);
             font-size: 0.95em;
         }
 
@@ -53,28 +93,30 @@
         .form-group label {
             display: block;
             margin-bottom: 8px;
-            color: #374151;
+            color: var(--text-primary);
             font-weight: 500;
         }
 
         .form-group input {
             width: 100%;
             padding: 12px 16px;
-            border: 2px solid #e5e7eb;
+            border: 2px solid var(--input-border);
             border-radius: 8px;
             font-size: 1em;
-            transition: border-color 0.2s ease;
+            background: var(--input-bg);
+            color: var(--text-primary);
+            transition: border-color 0.2s ease, background 0.2s ease;
         }
 
         .form-group input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--input-focus);
         }
 
         .login-btn {
             width: 100%;
             padding: 14px 24px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
             color: white;
             border: none;
             border-radius: 8px;
@@ -95,8 +137,8 @@
         }
 
         .error-message {
-            background: #fee2e2;
-            color: #991b1b;
+            background: var(--error-bg);
+            color: var(--error-text);
             padding: 12px 16px;
             border-radius: 8px;
             margin-bottom: 20px;
@@ -107,14 +149,49 @@
         .security-note {
             margin-top: 20px;
             padding-top: 20px;
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid var(--border-color);
             text-align: center;
-            color: #9ca3af;
+            color: var(--text-muted);
             font-size: 0.8em;
+        }
+
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--card-bg);
+            padding: 10px;
+            border-radius: 6px;
+            color: var(--text-secondary);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            cursor: pointer;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .theme-toggle:hover {
+            color: #f59e0b;
         }
     </style>
 </head>
 <body>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">
+        <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+    </button>
+
     <div class="login-container">
         <div class="login-header">
             <h1>Qobuz Downloader</h1>
@@ -145,5 +222,32 @@
             Session expires after 24 hours of inactivity
         </div>
     </div>
+
+    <script>
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeIcon(savedTheme);
+        }
+
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const newTheme = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        }
+
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('themeIcon');
+            if (theme === 'dark') {
+                icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
+            } else {
+                icon.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
+            }
+        }
+
+        initTheme();
+    </script>
 </body>
 </html>

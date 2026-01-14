@@ -4,11 +4,12 @@ import os
 import secrets
 import threading
 import time
+from collections import deque
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Any, Callable
 
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for, send_file, Response
 
 
 # Rate limiting configuration
@@ -84,7 +85,11 @@ def create_app(
     app_settings: dict[str, Any] | None = None,
     clear_history_func: Callable[[], None] | None = None,
     clear_failed_func: Callable[[], None] | None = None,
-    clear_stats_func: Callable[[], None] | None = None
+    clear_stats_func: Callable[[], None] | None = None,
+    pause_func: Callable[[], bool] | None = None,
+    retry_failed_func: Callable[[], tuple[bool, str]] | None = None,
+    get_queue_func: Callable[[], dict[str, Any]] | None = None,
+    log_file_path: str | None = None
 ) -> Flask:
     """
     Create and configure the Flask app with authentication.
@@ -100,6 +105,10 @@ def create_app(
         clear_history_func: Function to clear download history
         clear_failed_func: Function to clear failed items
         clear_stats_func: Function to clear all statistics
+        pause_func: Function to toggle pause state
+        retry_failed_func: Function to retry failed downloads
+        get_queue_func: Function to get download queue
+        log_file_path: Path to the log file
 
     Returns:
         Configured Flask application
@@ -207,6 +216,7 @@ def create_app(
         """Get current application status."""
         status = {
             "is_running": job_running.is_set(),
+            "is_paused": app_state.get("is_paused", False),
             "current_status": app_state["current_status"],
             "last_run": format_timestamp(app_state["last_run"]),
             "last_run_timestamp": app_state["last_run"],
@@ -215,7 +225,8 @@ def create_app(
             "stats": app_state["stats"],
             "favorites_count": app_state["favorites_count"],
             "current_item": app_state["current_item"],
-            "activity": app_state.get("activity", {})
+            "activity": app_state.get("activity", {}),
+            "queue": app_state.get("queue", {})
         }
         return jsonify(status)
 
@@ -332,6 +343,199 @@ def create_app(
             "success": True,
             "message": "Download job triggered successfully"
         }), 200
+
+    @app.route('/api/pause', methods=['POST'])
+    @login_required
+    def toggle_pause() -> tuple[Any, int]:
+        """Toggle pause state for downloads."""
+        if pause_func is None:
+            return jsonify({
+                "success": False,
+                "message": "Pause function not available"
+            }), 500
+
+        is_paused = pause_func()
+        return jsonify({
+            "success": True,
+            "message": "Downloads paused" if is_paused else "Downloads resumed"
+        }), 200
+
+    @app.route('/api/retry-failed', methods=['POST'])
+    @login_required
+    def retry_failed() -> tuple[Any, int]:
+        """Retry all failed downloads."""
+        if retry_failed_func is None:
+            return jsonify({
+                "success": False,
+                "message": "Retry function not available"
+            }), 500
+
+        success, message = retry_failed_func()
+        return jsonify({
+            "success": success,
+            "message": message
+        }), 200 if success else 400
+
+    @app.route('/api/queue')
+    @login_required
+    def get_queue() -> Any:
+        """Get download queue information."""
+        if get_queue_func:
+            return jsonify(get_queue_func())
+        return jsonify({
+            "items": [],
+            "stats": {"pending": 0, "processing": 0, "completed": 0, "failed": 0}
+        })
+
+    @app.route('/api/logs')
+    @login_required
+    def get_logs() -> Any:
+        """Get application logs with filtering."""
+        level = request.args.get('level', 'info')
+        lines = min(int(request.args.get('lines', 100)), 1000)
+
+        if not log_file_path or not os.path.exists(log_file_path):
+            return jsonify({"logs": [], "error": "Log file not found"})
+
+        try:
+            with open(log_file_path, 'r', encoding='utf-8', errors='replace') as f:
+                all_lines = f.readlines()
+
+            # Filter by level
+            level_priority = {
+                'debug': 0,
+                'info': 1,
+                'warning': 2,
+                'error': 3,
+                'all': -1
+            }
+
+            min_level = level_priority.get(level.lower(), 1)
+            filtered_lines = []
+
+            for line in all_lines:
+                if min_level == -1:  # 'all' - include everything
+                    filtered_lines.append(line.rstrip())
+                elif ' - DEBUG - ' in line and min_level <= 0:
+                    filtered_lines.append(line.rstrip())
+                elif ' - INFO - ' in line and min_level <= 1:
+                    filtered_lines.append(line.rstrip())
+                elif ' - WARNING - ' in line and min_level <= 2:
+                    filtered_lines.append(line.rstrip())
+                elif ' - ERROR - ' in line and min_level <= 3:
+                    filtered_lines.append(line.rstrip())
+                elif ' - CRITICAL - ' in line:
+                    filtered_lines.append(line.rstrip())
+
+            # Return last N lines
+            return jsonify({"logs": filtered_lines[-lines:]})
+        except IOError as e:
+            return jsonify({"logs": [], "error": str(e)})
+
+    @app.route('/api/logs/download')
+    @login_required
+    def download_logs() -> Any:
+        """Download the full log file."""
+        if not log_file_path or not os.path.exists(log_file_path):
+            return jsonify({"error": "Log file not found"}), 404
+
+        return send_file(
+            log_file_path,
+            mimetype='text/plain',
+            as_attachment=True,
+            download_name='qobuz-downloader.log'
+        )
+
+    @app.route('/manifest.json')
+    def manifest() -> Any:
+        """PWA manifest file."""
+        return jsonify({
+            "name": "Qobuz Downloader",
+            "short_name": "Qobuz DL",
+            "description": "Automatic Qobuz favorites downloader",
+            "start_url": "/",
+            "display": "standalone",
+            "background_color": "#667eea",
+            "theme_color": "#667eea",
+            "orientation": "portrait-primary",
+            "icons": [
+                {
+                    "src": "/static/icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png",
+                    "purpose": "any maskable"
+                },
+                {
+                    "src": "/static/icon-512.png",
+                    "sizes": "512x512",
+                    "type": "image/png",
+                    "purpose": "any maskable"
+                }
+            ]
+        })
+
+    @app.route('/static/icon-192.png')
+    @app.route('/static/icon-512.png')
+    def pwa_icon() -> Response:
+        """Generate a simple PWA icon."""
+        # Create a simple colored square as placeholder icon
+        # This creates a minimal 1x1 PNG with the theme color
+        size = 512 if '512' in request.path else 192
+        # Simple SVG that browsers can use
+        svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}">
+            <rect width="{size}" height="{size}" fill="#667eea"/>
+            <text x="50%" y="50%" font-family="Arial, sans-serif" font-size="{size//4}" font-weight="bold"
+                  fill="white" text-anchor="middle" dominant-baseline="central">Q</text>
+        </svg>'''
+        return Response(svg, mimetype='image/svg+xml')
+
+    @app.route('/sw.js')
+    def service_worker() -> Response:
+        """Service worker for PWA."""
+        sw_content = '''
+const CACHE_NAME = 'qobuz-dl-v1';
+const urlsToCache = [
+    '/',
+    '/static/icon-192.png',
+    '/static/icon-512.png'
+];
+
+self.addEventListener('install', event => {
+    event.waitUntil(
+        caches.open(CACHE_NAME)
+            .then(cache => cache.addAll(urlsToCache))
+    );
+});
+
+self.addEventListener('fetch', event => {
+    // Network-first strategy for API calls
+    if (event.request.url.includes('/api/')) {
+        event.respondWith(
+            fetch(event.request)
+                .catch(() => caches.match(event.request))
+        );
+        return;
+    }
+
+    // Cache-first strategy for static assets
+    event.respondWith(
+        caches.match(event.request)
+            .then(response => response || fetch(event.request))
+    );
+});
+
+self.addEventListener('activate', event => {
+    event.waitUntil(
+        caches.keys().then(cacheNames => {
+            return Promise.all(
+                cacheNames.filter(name => name !== CACHE_NAME)
+                    .map(name => caches.delete(name))
+            );
+        })
+    );
+});
+'''
+        return Response(sw_content, mimetype='application/javascript')
 
     def format_timestamp(ts: float | None) -> str:
         """Convert timestamp to readable format."""

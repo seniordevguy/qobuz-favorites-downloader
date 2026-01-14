@@ -4,7 +4,61 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Qobuz Downloader - Dashboard</title>
+    <!-- PWA Support -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Qobuz DL">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
     <style>
+        :root {
+            /* Light theme (default) */
+            --bg-gradient-start: #667eea;
+            --bg-gradient-end: #764ba2;
+            --card-bg: #ffffff;
+            --card-shadow: rgba(0, 0, 0, 0.2);
+            --text-primary: #111827;
+            --text-secondary: #6b7280;
+            --text-heading: #333333;
+            --border-color: #e5e7eb;
+            --input-bg: #f3f4f6;
+            --success-color: #10b981;
+            --error-color: #ef4444;
+            --warning-color: #f59e0b;
+            --info-color: #3b82f6;
+            --tab-bg: rgba(255, 255, 255, 0.2);
+            --tab-hover: rgba(255, 255, 255, 0.3);
+            --tab-active-bg: #ffffff;
+            --tab-active-text: #667eea;
+            --indicator-bg: rgba(255, 255, 255, 0.9);
+            --log-bg: #1e1e1e;
+            --log-text: #d4d4d4;
+        }
+
+        [data-theme="dark"] {
+            --bg-gradient-start: #1a1a2e;
+            --bg-gradient-end: #16213e;
+            --card-bg: #1f2937;
+            --card-shadow: rgba(0, 0, 0, 0.5);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --text-heading: #e5e7eb;
+            --border-color: #374151;
+            --input-bg: #374151;
+            --success-color: #34d399;
+            --error-color: #f87171;
+            --warning-color: #fbbf24;
+            --info-color: #60a5fa;
+            --tab-bg: rgba(255, 255, 255, 0.1);
+            --tab-hover: rgba(255, 255, 255, 0.15);
+            --tab-active-bg: #1f2937;
+            --tab-active-text: #60a5fa;
+            --indicator-bg: #1f2937;
+            --log-bg: #0d1117;
+            --log-text: #c9d1d9;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -13,9 +67,11 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
             min-height: 100vh;
             padding: 20px;
+            padding-bottom: 80px;
+            transition: background 0.3s ease;
         }
 
         .container {
@@ -44,7 +100,7 @@
 
         .tab-btn {
             padding: 12px 24px;
-            background: rgba(255, 255, 255, 0.2);
+            background: var(--tab-bg);
             border: none;
             border-radius: 8px 8px 0 0;
             color: white;
@@ -55,12 +111,12 @@
         }
 
         .tab-btn:hover {
-            background: rgba(255, 255, 255, 0.3);
+            background: var(--tab-hover);
         }
 
         .tab-btn.active {
-            background: white;
-            color: #667eea;
+            background: var(--tab-active-bg);
+            color: var(--tab-active-text);
         }
 
         .tab-content {
@@ -79,10 +135,11 @@
         }
 
         .card {
-            background: white;
+            background: var(--card-bg);
             border-radius: 12px;
             padding: 24px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 10px 30px var(--card-shadow);
+            transition: background 0.3s ease, box-shadow 0.3s ease;
         }
 
         .card.full-width {
@@ -92,12 +149,20 @@
         .card h2 {
             font-size: 1.3em;
             margin-bottom: 16px;
-            color: #333;
-            border-bottom: 2px solid #667eea;
+            color: var(--text-heading);
+            border-bottom: 2px solid var(--bg-gradient-start);
             padding-bottom: 8px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .card h2 .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
         }
 
         .card h2 .clear-btn {
@@ -115,6 +180,27 @@
             background: #fecaca;
         }
 
+        .card h2 .retry-btn {
+            font-size: 0.7em;
+            padding: 4px 12px;
+            background: #dbeafe;
+            color: #1d4ed8;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .card h2 .retry-btn:hover {
+            background: #bfdbfe;
+        }
+
+        .card h2 .retry-btn:disabled {
+            background: #e5e7eb;
+            color: #9ca3af;
+            cursor: not-allowed;
+        }
+
         .status-badge {
             display: inline-block;
             padding: 6px 16px;
@@ -125,9 +211,10 @@
             letter-spacing: 0.5px;
         }
 
-        .status-idle { background: #10b981; color: white; }
-        .status-running { background: #3b82f6; color: white; animation: pulse 2s infinite; }
-        .status-error { background: #ef4444; color: white; }
+        .status-idle { background: var(--success-color); color: white; }
+        .status-running { background: var(--info-color); color: white; animation: pulse 2s infinite; }
+        .status-error { background: var(--error-color); color: white; }
+        .status-paused { background: var(--warning-color); color: white; }
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -138,14 +225,14 @@
             display: flex;
             justify-content: space-between;
             padding: 12px 0;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid var(--border-color);
         }
 
         .stat-row:last-child { border-bottom: none; }
-        .stat-label { color: #6b7280; font-weight: 500; }
-        .stat-value { color: #111827; font-weight: 600; }
-        .stat-value.success { color: #10b981; }
-        .stat-value.error { color: #ef4444; }
+        .stat-label { color: var(--text-secondary); font-weight: 500; }
+        .stat-value { color: var(--text-primary); font-weight: 600; }
+        .stat-value.success { color: var(--success-color); }
+        .stat-value.error { color: var(--error-color); }
 
         .error-message {
             background: #fee2e2;
@@ -157,6 +244,11 @@
             word-break: break-word;
         }
 
+        [data-theme="dark"] .error-message {
+            background: #450a0a;
+            color: #fca5a5;
+        }
+
         .footer {
             text-align: center;
             color: white;
@@ -164,23 +256,65 @@
             opacity: 0.9;
         }
 
-        .refresh-indicator {
+        .top-bar {
             position: fixed;
             top: 20px;
+            left: 20px;
             right: 20px;
-            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: space-between;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .top-bar > * {
+            pointer-events: auto;
+        }
+
+        .refresh-indicator {
+            background: var(--indicator-bg);
             padding: 10px 16px;
             border-radius: 6px;
             font-size: 0.9em;
-            color: #6b7280;
+            color: var(--text-secondary);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .top-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .icon-btn {
+            background: var(--indicator-bg);
+            padding: 10px;
+            border-radius: 6px;
+            color: var(--text-secondary);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+        }
+
+        .icon-btn:hover {
+            background: var(--card-bg);
+            color: var(--error-color);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .theme-toggle:hover {
+            color: var(--warning-color);
         }
 
         .trigger-btn {
             width: 100%;
             padding: 12px 24px;
             margin-top: 16px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
             color: white;
             border: none;
             border-radius: 8px;
@@ -195,44 +329,42 @@
         .trigger-btn:active { transform: translateY(0); }
         .trigger-btn:disabled { background: #9ca3af; cursor: not-allowed; transform: none; box-shadow: none; }
 
+        .btn-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .btn-row .trigger-btn {
+            margin-top: 0;
+            flex: 1;
+        }
+
+        .pause-btn {
+            background: linear-gradient(135deg, var(--warning-color) 0%, #d97706 100%);
+        }
+
         .notification {
             position: fixed;
             top: 80px;
             right: 20px;
-            background: white;
+            background: var(--card-bg);
             padding: 16px 24px;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             z-index: 1000;
             animation: slideIn 0.3s ease;
             max-width: 300px;
+            color: var(--text-primary);
         }
 
-        .notification.success { border-left: 4px solid #10b981; }
-        .notification.error { border-left: 4px solid #ef4444; }
+        .notification.success { border-left: 4px solid var(--success-color); }
+        .notification.error { border-left: 4px solid var(--error-color); }
 
         @keyframes slideIn {
             from { transform: translateX(400px); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
-
-        .logout-btn {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 10px;
-            border-radius: 6px;
-            color: #6b7280;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-        }
-
-        .logout-btn:hover { background: white; color: #ef4444; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2); }
 
         /* Progress Bar */
         .progress-container {
@@ -241,7 +373,7 @@
 
         .progress-bar {
             height: 20px;
-            background: #e5e7eb;
+            background: var(--border-color);
             border-radius: 10px;
             overflow: hidden;
             margin-bottom: 8px;
@@ -249,7 +381,7 @@
 
         .progress-fill {
             height: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
             transition: width 0.3s ease;
             display: flex;
             align-items: center;
@@ -261,12 +393,12 @@
 
         .progress-text {
             font-size: 0.9em;
-            color: #6b7280;
+            color: var(--text-secondary);
             text-align: center;
         }
 
         .current-item {
-            background: #f3f4f6;
+            background: var(--input-bg);
             padding: 12px;
             border-radius: 8px;
             margin-top: 12px;
@@ -274,13 +406,13 @@
         }
 
         .current-item .label {
-            color: #6b7280;
+            color: var(--text-secondary);
             font-size: 0.8em;
             margin-bottom: 4px;
         }
 
         .current-item .value {
-            color: #111827;
+            color: var(--text-primary);
             font-weight: 500;
             word-break: break-word;
         }
@@ -296,7 +428,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 12px;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid var(--border-color);
             gap: 12px;
         }
 
@@ -309,7 +441,7 @@
 
         .history-item .name {
             font-weight: 500;
-            color: #111827;
+            color: var(--text-primary);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -317,7 +449,7 @@
 
         .history-item .meta {
             font-size: 0.8em;
-            color: #6b7280;
+            color: var(--text-secondary);
         }
 
         .history-item .type-badge {
@@ -334,10 +466,15 @@
         .type-badge.artists { background: #fef3c7; color: #92400e; }
         .type-badge.failed { background: #fee2e2; color: #991b1b; }
 
+        [data-theme="dark"] .type-badge.tracks { background: #1e3a5f; color: #93c5fd; }
+        [data-theme="dark"] .type-badge.albums { background: #14532d; color: #86efac; }
+        [data-theme="dark"] .type-badge.artists { background: #451a03; color: #fcd34d; }
+        [data-theme="dark"] .type-badge.failed { background: #450a0a; color: #fca5a5; }
+
         .empty-state {
             text-align: center;
             padding: 40px;
-            color: #6b7280;
+            color: var(--text-secondary);
         }
 
         .empty-state svg {
@@ -355,35 +492,282 @@
         }
 
         .setting-item {
-            background: #f3f4f6;
+            background: var(--input-bg);
             padding: 16px;
             border-radius: 8px;
         }
 
         .setting-item .label {
             font-size: 0.85em;
-            color: #6b7280;
+            color: var(--text-secondary);
             margin-bottom: 4px;
         }
 
         .setting-item .value {
             font-weight: 600;
-            color: #111827;
+            color: var(--text-primary);
+        }
+
+        /* Log Viewer */
+        .log-viewer {
+            background: var(--log-bg);
+            color: var(--log-text);
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.85em;
+            padding: 16px;
+            border-radius: 8px;
+            max-height: 600px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.5;
+        }
+
+        .log-controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .log-controls select,
+        .log-controls input {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.9em;
+        }
+
+        .log-controls button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: var(--info-color);
+            color: white;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .log-controls button:hover {
+            opacity: 0.9;
+        }
+
+        .log-line {
+            padding: 2px 0;
+        }
+
+        .log-line.error { color: #f87171; }
+        .log-line.warning { color: #fbbf24; }
+        .log-line.info { color: #60a5fa; }
+        .log-line.debug { color: #9ca3af; }
+
+        /* Queue */
+        .queue-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .queue-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 12px;
+        }
+
+        .queue-item:last-child { border-bottom: none; }
+
+        .queue-item .position {
+            width: 30px;
+            height: 30px;
+            background: var(--input-bg);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 0.9em;
+        }
+
+        .queue-item .info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .queue-item .name {
+            font-weight: 500;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .queue-item .status {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+        }
+
+        .queue-item.active {
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .queue-stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .queue-stat {
+            text-align: center;
+        }
+
+        .queue-stat .number {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .queue-stat .label {
+            font-size: 0.85em;
+            color: var(--text-secondary);
+        }
+
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+                padding-top: 70px;
+                padding-bottom: 80px;
+            }
+
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .tabs {
+                gap: 4px;
+            }
+
+            .tab-btn {
+                padding: 10px 16px;
+                font-size: 0.9em;
+            }
+
+            .card {
+                padding: 16px;
+            }
+
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+
+            .top-bar {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+            }
+
+            .card h2 {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .card h2 .btn-group {
+                width: 100%;
+            }
+
+            .card h2 .btn-group button {
+                flex: 1;
+            }
+        }
+
+        /* Install prompt for PWA */
+        .install-prompt {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px var(--card-shadow);
+            display: none;
+            align-items: center;
+            gap: 16px;
+            z-index: 1000;
+        }
+
+        .install-prompt.show {
+            display: flex;
+        }
+
+        .install-prompt .message {
+            flex: 1;
+            color: var(--text-primary);
+        }
+
+        .install-prompt .message strong {
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .install-prompt .message span {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+        }
+
+        .install-prompt button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .install-prompt .install-btn {
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            color: white;
+        }
+
+        .install-prompt .dismiss-btn {
+            background: var(--input-bg);
+            color: var(--text-secondary);
         }
     </style>
 </head>
 <body>
-    <div class="refresh-indicator" id="refreshIndicator">
-        Auto-refresh: <span id="countdown">5</span>s
+    <div class="top-bar">
+        <div class="top-controls">
+            <a href="/logout" class="icon-btn" title="Sign Out">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+            </a>
+            <button class="icon-btn theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">
+                <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="refresh-indicator" id="refreshIndicator">
+            Auto-refresh: <span id="countdown">5</span>s
+        </div>
     </div>
-
-    <a href="/logout" class="logout-btn" title="Sign Out">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-            <polyline points="16 17 21 12 16 7"></polyline>
-            <line x1="21" y1="12" x2="9" y2="12"></line>
-        </svg>
-    </a>
 
     <div class="container">
         <div class="header">
@@ -394,8 +778,10 @@
         <!-- Tab Navigation -->
         <div class="tabs">
             <button class="tab-btn active" onclick="showTab('overview')">Overview</button>
+            <button class="tab-btn" onclick="showTab('queue')">Queue</button>
             <button class="tab-btn" onclick="showTab('history')">History</button>
-            <button class="tab-btn" onclick="showTab('failed')">Failed Items</button>
+            <button class="tab-btn" onclick="showTab('failed')">Failed</button>
+            <button class="tab-btn" onclick="showTab('logs')">Logs</button>
             <button class="tab-btn" onclick="showTab('settings')">Settings</button>
         </div>
 
@@ -418,9 +804,14 @@
                         <span class="stat-label">Next Run</span>
                         <span class="stat-value" id="nextRun">Calculating...</span>
                     </div>
-                    <button id="triggerBtn" class="trigger-btn" onclick="triggerDownload()">
-                        Download Now
-                    </button>
+                    <div class="btn-row">
+                        <button id="triggerBtn" class="trigger-btn" onclick="triggerDownload()">
+                            Download Now
+                        </button>
+                        <button id="pauseBtn" class="trigger-btn pause-btn" onclick="togglePause()" style="display: none;">
+                            Pause
+                        </button>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -478,6 +869,49 @@
             </div>
         </div>
 
+        <!-- Queue Tab -->
+        <div id="queue" class="tab-content">
+            <div class="card full-width">
+                <h2>
+                    Download Queue
+                    <div class="btn-group">
+                        <button id="queuePauseBtn" class="retry-btn" onclick="togglePause()">Pause Queue</button>
+                    </div>
+                </h2>
+                <div class="queue-stats">
+                    <div class="queue-stat">
+                        <div class="number" id="queuePending">0</div>
+                        <div class="label">Pending</div>
+                    </div>
+                    <div class="queue-stat">
+                        <div class="number" id="queueProcessing">0</div>
+                        <div class="label">Processing</div>
+                    </div>
+                    <div class="queue-stat">
+                        <div class="number" id="queueCompleted">0</div>
+                        <div class="label">Completed</div>
+                    </div>
+                    <div class="queue-stat">
+                        <div class="number" id="queueFailed">0</div>
+                        <div class="label">Failed</div>
+                    </div>
+                </div>
+                <div id="queueList" class="queue-list">
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="8" y1="6" x2="21" y2="6"></line>
+                            <line x1="8" y1="12" x2="21" y2="12"></line>
+                            <line x1="8" y1="18" x2="21" y2="18"></line>
+                            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                        </svg>
+                        <p>Queue is empty</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- History Tab -->
         <div id="history" class="tab-content">
             <div class="card full-width">
@@ -501,7 +935,10 @@
             <div class="card full-width">
                 <h2>
                     Failed Downloads
-                    <button class="clear-btn" onclick="clearFailed()">Clear Failed</button>
+                    <div class="btn-group">
+                        <button id="retryAllBtn" class="retry-btn" onclick="retryFailed()">Retry All</button>
+                        <button class="clear-btn" onclick="clearFailed()">Clear Failed</button>
+                    </div>
                 </h2>
                 <div id="failedList" class="history-list">
                     <div class="empty-state">
@@ -512,6 +949,31 @@
                         </svg>
                         <p>No failed downloads</p>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Tab -->
+        <div id="logs" class="tab-content">
+            <div class="card full-width">
+                <h2>Application Logs</h2>
+                <div class="log-controls">
+                    <select id="logLevel" onchange="loadLogs()">
+                        <option value="all">All Levels</option>
+                        <option value="error">Errors Only</option>
+                        <option value="warning">Warnings & Above</option>
+                        <option value="info" selected>Info & Above</option>
+                        <option value="debug">Debug (All)</option>
+                    </select>
+                    <input type="number" id="logLines" value="100" min="10" max="1000" title="Number of lines">
+                    <button onclick="loadLogs()">Refresh</button>
+                    <button onclick="downloadLogs()">Download</button>
+                    <label style="display: flex; align-items: center; gap: 4px; color: var(--text-secondary);">
+                        <input type="checkbox" id="autoScrollLogs" checked> Auto-scroll
+                    </label>
+                </div>
+                <div id="logViewer" class="log-viewer">
+                    Loading logs...
                 </div>
             </div>
         </div>
@@ -533,11 +995,48 @@
         </div>
     </div>
 
+    <!-- PWA Install Prompt -->
+    <div class="install-prompt" id="installPrompt">
+        <div class="message">
+            <strong>Install Qobuz Downloader</strong>
+            <span>Add to your home screen for quick access</span>
+        </div>
+        <button class="install-btn" onclick="installPWA()">Install</button>
+        <button class="dismiss-btn" onclick="dismissInstall()">Not now</button>
+    </div>
+
     <script>
         let countdown = 5;
         let countdownInterval;
         let currentTab = 'overview';
+        let deferredPrompt = null;
+        let isPaused = false;
 
+        // Theme handling
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeIcon(savedTheme);
+        }
+
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const newTheme = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        }
+
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('themeIcon');
+            if (theme === 'dark') {
+                icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
+            } else {
+                icon.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
+            }
+        }
+
+        // Tab navigation
         function showTab(tabName) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -548,6 +1047,8 @@
             if (tabName === 'history') loadHistory();
             if (tabName === 'failed') loadFailed();
             if (tabName === 'settings') loadSettings();
+            if (tabName === 'logs') loadLogs();
+            if (tabName === 'queue') loadQueue();
         }
 
         function updateStatus() {
@@ -555,15 +1056,40 @@
                 .then(response => response.json())
                 .then(data => {
                     const statusBadge = document.getElementById('statusBadge');
-                    statusBadge.textContent = data.is_running ? data.current_status.toUpperCase() : 'IDLE';
-                    statusBadge.className = 'status-badge';
-                    if (data.is_running) statusBadge.classList.add('status-running');
-                    else if (data.current_status === 'error') statusBadge.classList.add('status-error');
-                    else statusBadge.classList.add('status-idle');
+                    isPaused = data.is_paused || false;
+
+                    if (isPaused) {
+                        statusBadge.textContent = 'PAUSED';
+                        statusBadge.className = 'status-badge status-paused';
+                    } else if (data.is_running) {
+                        statusBadge.textContent = data.current_status.toUpperCase();
+                        statusBadge.className = 'status-badge status-running';
+                    } else if (data.current_status === 'error') {
+                        statusBadge.textContent = 'ERROR';
+                        statusBadge.className = 'status-badge status-error';
+                    } else {
+                        statusBadge.textContent = 'IDLE';
+                        statusBadge.className = 'status-badge status-idle';
+                    }
 
                     const triggerBtn = document.getElementById('triggerBtn');
+                    const pauseBtn = document.getElementById('pauseBtn');
+                    const queuePauseBtn = document.getElementById('queuePauseBtn');
+
                     triggerBtn.disabled = data.is_running;
                     triggerBtn.textContent = data.is_running ? 'Running...' : 'Download Now';
+
+                    if (data.is_running) {
+                        pauseBtn.style.display = 'block';
+                        pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+                    } else {
+                        pauseBtn.style.display = 'none';
+                    }
+
+                    if (queuePauseBtn) {
+                        queuePauseBtn.textContent = isPaused ? 'Resume Queue' : 'Pause Queue';
+                        queuePauseBtn.disabled = !data.is_running;
+                    }
 
                     document.getElementById('lastRun').textContent = data.last_run;
                     document.getElementById('nextRun').textContent = data.next_run;
@@ -588,6 +1114,14 @@
                     }
 
                     updateActivity(data.activity, data.is_running);
+
+                    // Update queue stats if available
+                    if (data.queue) {
+                        document.getElementById('queuePending').textContent = data.queue.pending || 0;
+                        document.getElementById('queueProcessing').textContent = data.queue.processing || 0;
+                        document.getElementById('queueCompleted').textContent = data.queue.completed || 0;
+                        document.getElementById('queueFailed').textContent = data.queue.failed || 0;
+                    }
                 })
                 .catch(error => console.error('Error fetching status:', error));
         }
@@ -661,6 +1195,8 @@
                 .then(response => response.json())
                 .then(data => {
                     const container = document.getElementById('failedList');
+                    const retryBtn = document.getElementById('retryAllBtn');
+
                     if (!data || data.length === 0) {
                         container.innerHTML = `
                             <div class="empty-state">
@@ -671,8 +1207,11 @@
                                 </svg>
                                 <p>No failed downloads</p>
                             </div>`;
+                        retryBtn.disabled = true;
                         return;
                     }
+
+                    retryBtn.disabled = false;
                     container.innerHTML = data.map(item => `
                         <div class="history-item">
                             <div class="info">
@@ -742,6 +1281,85 @@
                 .catch(error => console.error('Error loading settings:', error));
         }
 
+        function loadLogs() {
+            const level = document.getElementById('logLevel').value;
+            const lines = document.getElementById('logLines').value;
+
+            fetch(`/api/logs?level=${level}&lines=${lines}`)
+                .then(response => response.json())
+                .then(data => {
+                    const viewer = document.getElementById('logViewer');
+                    if (!data.logs || data.logs.length === 0) {
+                        viewer.innerHTML = '<span class="log-line">No logs available</span>';
+                        return;
+                    }
+
+                    viewer.innerHTML = data.logs.map(line => {
+                        let levelClass = '';
+                        if (line.includes(' - ERROR - ')) levelClass = 'error';
+                        else if (line.includes(' - WARNING - ')) levelClass = 'warning';
+                        else if (line.includes(' - INFO - ')) levelClass = 'info';
+                        else if (line.includes(' - DEBUG - ')) levelClass = 'debug';
+                        return `<div class="log-line ${levelClass}">${escapeHtml(line)}</div>`;
+                    }).join('');
+
+                    // Auto-scroll to bottom
+                    if (document.getElementById('autoScrollLogs').checked) {
+                        viewer.scrollTop = viewer.scrollHeight;
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('logViewer').innerHTML = '<span class="log-line error">Error loading logs</span>';
+                    console.error('Error loading logs:', error);
+                });
+        }
+
+        function downloadLogs() {
+            window.location.href = '/api/logs/download';
+        }
+
+        function loadQueue() {
+            fetch('/api/queue')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('queueList');
+
+                    // Update stats
+                    document.getElementById('queuePending').textContent = data.stats?.pending || 0;
+                    document.getElementById('queueProcessing').textContent = data.stats?.processing || 0;
+                    document.getElementById('queueCompleted').textContent = data.stats?.completed || 0;
+                    document.getElementById('queueFailed').textContent = data.stats?.failed || 0;
+
+                    if (!data.items || data.items.length === 0) {
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                                </svg>
+                                <p>Queue is empty</p>
+                            </div>`;
+                        return;
+                    }
+
+                    container.innerHTML = data.items.map((item, index) => `
+                        <div class="queue-item ${item.status === 'processing' ? 'active' : ''}">
+                            <div class="position">${index + 1}</div>
+                            <div class="info">
+                                <div class="name">${escapeHtml(item.name)}</div>
+                                <div class="status">${item.type} - ${item.status}</div>
+                            </div>
+                            <span class="type-badge ${item.type}">${item.type}</span>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => console.error('Error loading queue:', error));
+        }
+
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
@@ -779,6 +1397,46 @@
                     showNotification('Failed to trigger download', false);
                     btn.disabled = false;
                     btn.textContent = 'Download Now';
+                });
+        }
+
+        function togglePause() {
+            fetch('/api/pause', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    if (data.success) {
+                        updateStatus();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error toggling pause:', error);
+                    showNotification('Failed to toggle pause', false);
+                });
+        }
+
+        function retryFailed() {
+            const btn = document.getElementById('retryAllBtn');
+            btn.disabled = true;
+            btn.textContent = 'Retrying...';
+
+            fetch('/api/retry-failed', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    btn.textContent = 'Retry All';
+                    if (data.success) {
+                        loadFailed();
+                        updateStatus();
+                    } else {
+                        btn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error retrying failed:', error);
+                    showNotification('Failed to retry items', false);
+                    btn.disabled = false;
+                    btn.textContent = 'Retry All';
                 });
         }
 
@@ -831,7 +1489,44 @@
             }, 1000);
         }
 
+        // PWA Install handling
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            // Show install prompt after a delay
+            setTimeout(() => {
+                if (!localStorage.getItem('pwa-install-dismissed')) {
+                    document.getElementById('installPrompt').classList.add('show');
+                }
+            }, 5000);
+        });
+
+        function installPWA() {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then((choiceResult) => {
+                if (choiceResult.outcome === 'accepted') {
+                    showNotification('App installed successfully!', true);
+                }
+                deferredPrompt = null;
+                document.getElementById('installPrompt').classList.remove('show');
+            });
+        }
+
+        function dismissInstall() {
+            document.getElementById('installPrompt').classList.remove('show');
+            localStorage.setItem('pwa-install-dismissed', 'true');
+        }
+
+        // Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(reg => console.log('Service Worker registered'))
+                .catch(err => console.log('Service Worker registration failed:', err));
+        }
+
         // Initial load
+        initTheme();
         updateStatus();
         startCountdown();
     </script>
