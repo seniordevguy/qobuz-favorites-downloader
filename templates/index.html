@@ -345,12 +345,14 @@
                     document.getElementById('albumsFailed').textContent = data.stats.albums_failed;
                     document.getElementById('artistsFailed').textContent = data.stats.artists_failed;
 
-                    // Update error message
+                    // Update error message (using textContent to prevent XSS)
                     const errorContainer = document.getElementById('errorContainer');
+                    errorContainer.innerHTML = '';
                     if (data.stats.last_error) {
-                        errorContainer.innerHTML = `<div class="error-message">Last Error: ${data.stats.last_error}</div>`;
-                    } else {
-                        errorContainer.innerHTML = '';
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'error-message';
+                        errorDiv.textContent = 'Last Error: ' + data.stats.last_error;
+                        errorContainer.appendChild(errorDiv);
                     }
                 })
                 .catch(error => {
