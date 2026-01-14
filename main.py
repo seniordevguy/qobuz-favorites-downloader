@@ -80,6 +80,15 @@ check_interval_minutes = int(os.environ.get("CHECK_INTERVAL_MINUTES", 30))
 enable_web_ui = os.environ.get("ENABLE_WEB_UI", "true").lower() == "true"
 web_ui_port = int(os.environ.get("WEB_UI_PORT", 5000))
 
+# Web UI Authentication (optional - if not set, no auth required)
+web_ui_username = os.environ.get("WEB_UI_USERNAME")
+web_ui_password = os.environ.get("WEB_UI_PASSWORD")
+web_ui_secret_key = os.environ.get("WEB_UI_SECRET_KEY")
+
+# Warn if auth is not configured when web UI is enabled
+if enable_web_ui and not (web_ui_username and web_ui_password):
+    logger.warning("Web UI authentication is NOT configured. Set WEB_UI_USERNAME and WEB_UI_PASSWORD for security.")
+
 # Use a threading.Lock for thread synchronization
 job_lock = threading.Lock()
 job_running = threading.Event()
@@ -446,9 +455,17 @@ def run_scheduler() -> None:
 if __name__ == "__main__":
     # Start web UI if enabled
     if enable_web_ui:
-        logger.info(f"Starting web UI on port {web_ui_port}")
+        auth_status = "enabled" if (web_ui_username and web_ui_password) else "DISABLED (not recommended)"
+        logger.info(f"Starting web UI on port {web_ui_port} (authentication: {auth_status})")
         from web_ui import create_app
-        web_app = create_app(app_state, job_running, job_function=job)
+        web_app = create_app(
+            app_state,
+            job_running,
+            job_function=job,
+            auth_username=web_ui_username,
+            auth_password=web_ui_password,
+            secret_key=web_ui_secret_key
+        )
 
         # Run Flask in a separate thread
         web_thread = threading.Thread(
