@@ -19,7 +19,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
         }
 
@@ -32,6 +32,43 @@
         .header h1 {
             font-size: 2.5em;
             margin-bottom: 10px;
+        }
+
+        /* Tab Navigation */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            padding: 12px 24px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 8px 8px 0 0;
+            color: white;
+            font-size: 1em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .tab-btn.active {
+            background: white;
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
         }
 
         .dashboard {
@@ -48,12 +85,34 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
         }
 
+        .card.full-width {
+            grid-column: 1 / -1;
+        }
+
         .card h2 {
             font-size: 1.3em;
             margin-bottom: 16px;
             color: #333;
             border-bottom: 2px solid #667eea;
             padding-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card h2 .clear-btn {
+            font-size: 0.7em;
+            padding: 4px 12px;
+            background: #fee2e2;
+            color: #991b1b;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .card h2 .clear-btn:hover {
+            background: #fecaca;
         }
 
         .status-badge {
@@ -66,21 +125,9 @@
             letter-spacing: 0.5px;
         }
 
-        .status-idle {
-            background: #10b981;
-            color: white;
-        }
-
-        .status-running {
-            background: #3b82f6;
-            color: white;
-            animation: pulse 2s infinite;
-        }
-
-        .status-error {
-            background: #ef4444;
-            color: white;
-        }
+        .status-idle { background: #10b981; color: white; }
+        .status-running { background: #3b82f6; color: white; animation: pulse 2s infinite; }
+        .status-error { background: #ef4444; color: white; }
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -94,27 +141,11 @@
             border-bottom: 1px solid #e5e7eb;
         }
 
-        .stat-row:last-child {
-            border-bottom: none;
-        }
-
-        .stat-label {
-            color: #6b7280;
-            font-weight: 500;
-        }
-
-        .stat-value {
-            color: #111827;
-            font-weight: 600;
-        }
-
-        .stat-value.success {
-            color: #10b981;
-        }
-
-        .stat-value.error {
-            color: #ef4444;
-        }
+        .stat-row:last-child { border-bottom: none; }
+        .stat-label { color: #6b7280; font-weight: 500; }
+        .stat-value { color: #111827; font-weight: 600; }
+        .stat-value.success { color: #10b981; }
+        .stat-value.error { color: #ef4444; }
 
         .error-message {
             background: #fee2e2;
@@ -145,10 +176,6 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
-        .loading {
-            opacity: 0.6;
-        }
-
         .trigger-btn {
             width: 100%;
             padding: 12px 24px;
@@ -164,21 +191,9 @@
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
         }
 
-        .trigger-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
-        }
-
-        .trigger-btn:active {
-            transform: translateY(0);
-        }
-
-        .trigger-btn:disabled {
-            background: #9ca3af;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
+        .trigger-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4); }
+        .trigger-btn:active { transform: translateY(0); }
+        .trigger-btn:disabled { background: #9ca3af; cursor: not-allowed; transform: none; box-shadow: none; }
 
         .notification {
             position: fixed;
@@ -193,23 +208,12 @@
             max-width: 300px;
         }
 
-        .notification.success {
-            border-left: 4px solid #10b981;
-        }
-
-        .notification.error {
-            border-left: 4px solid #ef4444;
-        }
+        .notification.success { border-left: 4px solid #10b981; }
+        .notification.error { border-left: 4px solid #ef4444; }
 
         @keyframes slideIn {
-            from {
-                transform: translateX(400px);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
+            from { transform: translateX(400px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
         }
 
         .logout-btn {
@@ -228,10 +232,143 @@
             transition: all 0.2s ease;
         }
 
-        .logout-btn:hover {
-            background: white;
-            color: #ef4444;
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+        .logout-btn:hover { background: white; color: #ef4444; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2); }
+
+        /* Progress Bar */
+        .progress-container {
+            margin-top: 16px;
+        }
+
+        .progress-bar {
+            height: 20px;
+            background: #e5e7eb;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .progress-text {
+            font-size: 0.9em;
+            color: #6b7280;
+            text-align: center;
+        }
+
+        .current-item {
+            background: #f3f4f6;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-size: 0.9em;
+        }
+
+        .current-item .label {
+            color: #6b7280;
+            font-size: 0.8em;
+            margin-bottom: 4px;
+        }
+
+        .current-item .value {
+            color: #111827;
+            font-weight: 500;
+            word-break: break-word;
+        }
+
+        /* History List */
+        .history-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+            gap: 12px;
+        }
+
+        .history-item:last-child { border-bottom: none; }
+
+        .history-item .info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .history-item .name {
+            font-weight: 500;
+            color: #111827;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .history-item .meta {
+            font-size: 0.8em;
+            color: #6b7280;
+        }
+
+        .history-item .type-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .type-badge.tracks { background: #dbeafe; color: #1d4ed8; }
+        .type-badge.albums { background: #dcfce7; color: #166534; }
+        .type-badge.artists { background: #fef3c7; color: #92400e; }
+        .type-badge.failed { background: #fee2e2; color: #991b1b; }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .empty-state svg {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Settings */
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+        }
+
+        .setting-item {
+            background: #f3f4f6;
+            padding: 16px;
+            border-radius: 8px;
+        }
+
+        .setting-item .label {
+            font-size: 0.85em;
+            color: #6b7280;
+            margin-bottom: 4px;
+        }
+
+        .setting-item .value {
+            font-weight: 600;
+            color: #111827;
         }
     </style>
 </head>
@@ -254,75 +391,140 @@
             <p>Automatic favorites downloader dashboard</p>
         </div>
 
-        <div class="dashboard">
-            <div class="card">
-                <h2>Current Status</h2>
-                <div class="stat-row">
-                    <span class="stat-label">Status</span>
-                    <span class="stat-value">
-                        <span id="statusBadge" class="status-badge status-idle">IDLE</span>
-                    </span>
-                </div>
-                <div class="stat-row">
-                    <span class="stat-label">Last Run</span>
-                    <span class="stat-value" id="lastRun">Never</span>
-                </div>
-                <div class="stat-row">
-                    <span class="stat-label">Next Run</span>
-                    <span class="stat-value" id="nextRun">Calculating...</span>
-                </div>
-                <button id="triggerBtn" class="trigger-btn" onclick="triggerDownload()">
-                    Download Now
-                </button>
-            </div>
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showTab('overview')">Overview</button>
+            <button class="tab-btn" onclick="showTab('history')">History</button>
+            <button class="tab-btn" onclick="showTab('failed')">Failed Items</button>
+            <button class="tab-btn" onclick="showTab('settings')">Settings</button>
+        </div>
 
-            <div class="card">
-                <h2>Pending Favorites</h2>
-                <div class="stat-row">
-                    <span class="stat-label">Tracks</span>
-                    <span class="stat-value" id="favTracks">0</span>
+        <!-- Overview Tab -->
+        <div id="overview" class="tab-content active">
+            <div class="dashboard">
+                <div class="card">
+                    <h2>Current Status</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Status</span>
+                        <span class="stat-value">
+                            <span id="statusBadge" class="status-badge status-idle">IDLE</span>
+                        </span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Last Run</span>
+                        <span class="stat-value" id="lastRun">Never</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Next Run</span>
+                        <span class="stat-value" id="nextRun">Calculating...</span>
+                    </div>
+                    <button id="triggerBtn" class="trigger-btn" onclick="triggerDownload()">
+                        Download Now
+                    </button>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Albums</span>
-                    <span class="stat-value" id="favAlbums">0</span>
+
+                <div class="card">
+                    <h2>Current Activity</h2>
+                    <div id="activityContent">
+                        <div class="empty-state">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            <p>No active downloads</p>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Artists</span>
-                    <span class="stat-value" id="favArtists">0</span>
+
+                <div class="card">
+                    <h2>Pending Favorites</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Tracks</span>
+                        <span class="stat-value" id="favTracks">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Albums</span>
+                        <span class="stat-value" id="favAlbums">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Artists</span>
+                        <span class="stat-value" id="favArtists">0</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>
+                        Download Statistics
+                        <button class="clear-btn" onclick="clearStats()">Clear</button>
+                    </h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Tracks Downloaded</span>
+                        <span class="stat-value success" id="tracksDownloaded">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Albums Downloaded</span>
+                        <span class="stat-value success" id="albumsDownloaded">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Artists Downloaded</span>
+                        <span class="stat-value success" id="artistsDownloaded">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Total Failures</span>
+                        <span class="stat-value error" id="totalFailed">0</span>
+                    </div>
+                    <div id="errorContainer"></div>
                 </div>
             </div>
+        </div>
 
-            <div class="card">
-                <h2>Download Statistics</h2>
-                <div class="stat-row">
-                    <span class="stat-label">Tracks Downloaded</span>
-                    <span class="stat-value success" id="tracksDownloaded">0</span>
-                </div>
-                <div class="stat-row">
-                    <span class="stat-label">Albums Downloaded</span>
-                    <span class="stat-value success" id="albumsDownloaded">0</span>
-                </div>
-                <div class="stat-row">
-                    <span class="stat-label">Artists Downloaded</span>
-                    <span class="stat-value success" id="artistsDownloaded">0</span>
+        <!-- History Tab -->
+        <div id="history" class="tab-content">
+            <div class="card full-width">
+                <h2>
+                    Download History
+                    <button class="clear-btn" onclick="clearHistory()">Clear History</button>
+                </h2>
+                <div id="historyList" class="history-list">
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <p>No download history yet</p>
+                    </div>
                 </div>
             </div>
+        </div>
 
-            <div class="card">
-                <h2>Failures</h2>
-                <div class="stat-row">
-                    <span class="stat-label">Track Failures</span>
-                    <span class="stat-value error" id="tracksFailed">0</span>
+        <!-- Failed Items Tab -->
+        <div id="failed" class="tab-content">
+            <div class="card full-width">
+                <h2>
+                    Failed Downloads
+                    <button class="clear-btn" onclick="clearFailed()">Clear Failed</button>
+                </h2>
+                <div id="failedList" class="history-list">
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                        </svg>
+                        <p>No failed downloads</p>
+                    </div>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Album Failures</span>
-                    <span class="stat-value error" id="albumsFailed">0</span>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="settings" class="tab-content">
+            <div class="card full-width">
+                <h2>Application Settings</h2>
+                <div id="settingsContent" class="settings-grid">
+                    <div class="empty-state">
+                        <p>Loading settings...</p>
+                    </div>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Artist Failures</span>
-                    <span class="stat-value error" id="artistsFailed">0</span>
-                </div>
-                <div id="errorContainer"></div>
             </div>
         </div>
 
@@ -334,48 +536,48 @@
     <script>
         let countdown = 5;
         let countdownInterval;
+        let currentTab = 'overview';
+
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+            currentTab = tabName;
+
+            if (tabName === 'history') loadHistory();
+            if (tabName === 'failed') loadFailed();
+            if (tabName === 'settings') loadSettings();
+        }
 
         function updateStatus() {
             fetch('/api/status')
                 .then(response => response.json())
                 .then(data => {
-                    // Update status badge
                     const statusBadge = document.getElementById('statusBadge');
-                    statusBadge.textContent = data.is_running ?
-                        data.current_status.toUpperCase() : 'IDLE';
-
+                    statusBadge.textContent = data.is_running ? data.current_status.toUpperCase() : 'IDLE';
                     statusBadge.className = 'status-badge';
-                    if (data.is_running) {
-                        statusBadge.classList.add('status-running');
-                    } else if (data.current_status === 'error') {
-                        statusBadge.classList.add('status-error');
-                    } else {
-                        statusBadge.classList.add('status-idle');
-                    }
+                    if (data.is_running) statusBadge.classList.add('status-running');
+                    else if (data.current_status === 'error') statusBadge.classList.add('status-error');
+                    else statusBadge.classList.add('status-idle');
 
-                    // Update button state
                     const triggerBtn = document.getElementById('triggerBtn');
                     triggerBtn.disabled = data.is_running;
                     triggerBtn.textContent = data.is_running ? 'Running...' : 'Download Now';
 
-                    // Update timestamps
                     document.getElementById('lastRun').textContent = data.last_run;
                     document.getElementById('nextRun').textContent = data.next_run;
 
-                    // Update favorites count
                     document.getElementById('favTracks').textContent = data.favorites_count.tracks;
                     document.getElementById('favAlbums').textContent = data.favorites_count.albums;
                     document.getElementById('favArtists').textContent = data.favorites_count.artists;
 
-                    // Update stats
                     document.getElementById('tracksDownloaded').textContent = data.stats.tracks_downloaded;
                     document.getElementById('albumsDownloaded').textContent = data.stats.albums_downloaded;
                     document.getElementById('artistsDownloaded').textContent = data.stats.artists_downloaded;
-                    document.getElementById('tracksFailed').textContent = data.stats.tracks_failed;
-                    document.getElementById('albumsFailed').textContent = data.stats.albums_failed;
-                    document.getElementById('artistsFailed').textContent = data.stats.artists_failed;
+                    const totalFailed = data.stats.tracks_failed + data.stats.albums_failed + data.stats.artists_failed;
+                    document.getElementById('totalFailed').textContent = totalFailed;
 
-                    // Update error message (using textContent to prevent XSS)
                     const errorContainer = document.getElementById('errorContainer');
                     errorContainer.innerHTML = '';
                     if (data.stats.last_error) {
@@ -384,10 +586,167 @@
                         errorDiv.textContent = 'Last Error: ' + data.stats.last_error;
                         errorContainer.appendChild(errorDiv);
                     }
+
+                    updateActivity(data.activity, data.is_running);
                 })
-                .catch(error => {
-                    console.error('Error fetching status:', error);
-                });
+                .catch(error => console.error('Error fetching status:', error));
+        }
+
+        function updateActivity(activity, isRunning) {
+            const container = document.getElementById('activityContent');
+            if (!isRunning || !activity || !activity.current_type) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        <p>No active downloads</p>
+                    </div>`;
+                return;
+            }
+
+            const progress = activity.progress || {current: 0, total: 0};
+            const batch = activity.batch_progress || {current: 0, total: 0};
+            const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+
+            container.innerHTML = `
+                <div class="stat-row">
+                    <span class="stat-label">Downloading</span>
+                    <span class="stat-value"><span class="type-badge ${activity.current_type}">${activity.current_type}</span></span>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${percent}%">${percent}%</div>
+                    </div>
+                    <div class="progress-text">${progress.current} of ${progress.total} items (Batch ${batch.current}/${batch.total})</div>
+                </div>
+                ${activity.current_name ? `
+                <div class="current-item">
+                    <div class="label">Current Item</div>
+                    <div class="value">${escapeHtml(activity.current_name)}</div>
+                </div>` : ''}`;
+        }
+
+        function loadHistory() {
+            fetch('/api/history')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('historyList');
+                    if (!data || data.length === 0) {
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <p>No download history yet</p>
+                            </div>`;
+                        return;
+                    }
+                    container.innerHTML = data.map(item => `
+                        <div class="history-item">
+                            <div class="info">
+                                <div class="name">${escapeHtml(item.name)}</div>
+                                <div class="meta">${item.timestamp_formatted}</div>
+                            </div>
+                            <span class="type-badge ${item.type}">${item.type}</span>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => console.error('Error loading history:', error));
+        }
+
+        function loadFailed() {
+            fetch('/api/failed')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('failedList');
+                    if (!data || data.length === 0) {
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                                </svg>
+                                <p>No failed downloads</p>
+                            </div>`;
+                        return;
+                    }
+                    container.innerHTML = data.map(item => `
+                        <div class="history-item">
+                            <div class="info">
+                                <div class="name">${escapeHtml(item.name)}</div>
+                                <div class="meta">${item.timestamp_formatted} - ${escapeHtml(item.error || 'Unknown error')}</div>
+                            </div>
+                            <span class="type-badge failed">${item.type}</span>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => console.error('Error loading failed items:', error));
+        }
+
+        function loadSettings() {
+            fetch('/api/settings')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('settingsContent');
+                    if (!data || Object.keys(data).length === 0) {
+                        container.innerHTML = '<div class="empty-state"><p>No settings available</p></div>';
+                        return;
+                    }
+                    const qualityMap = {5: 'MP3 320kbps', 6: 'FLAC 16-bit', 7: 'FLAC 24-bit/96kHz', 27: 'FLAC 24-bit/192kHz'};
+                    container.innerHTML = `
+                        <div class="setting-item">
+                            <div class="label">Audio Quality</div>
+                            <div class="value">${qualityMap[data.quality] || data.quality}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Check Interval</div>
+                            <div class="value">${data.check_interval_minutes} minutes</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Track Workers</div>
+                            <div class="value">${data.max_workers_tracks}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Album Workers</div>
+                            <div class="value">${data.max_workers_albums}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Artist Workers</div>
+                            <div class="value">${data.max_workers_artists}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Batch Size</div>
+                            <div class="value">${data.batch_size}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Music Directory</div>
+                            <div class="value">${escapeHtml(data.music_directory)}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Config Directory</div>
+                            <div class="value">${escapeHtml(data.config_directory)}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Web UI Port</div>
+                            <div class="value">${data.web_ui_port}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Authentication</div>
+                            <div class="value">${data.auth_enabled ? 'Enabled' : 'Disabled'}</div>
+                        </div>
+                    `;
+                })
+                .catch(error => console.error('Error loading settings:', error));
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         function showNotification(message, isSuccess) {
@@ -395,10 +754,7 @@
             notification.className = `notification ${isSuccess ? 'success' : 'error'}`;
             notification.textContent = message;
             document.body.appendChild(notification);
-
-            setTimeout(() => {
-                notification.remove();
-            }, 5000);
+            setTimeout(() => notification.remove(), 5000);
         }
 
         function triggerDownload() {
@@ -406,30 +762,57 @@
             btn.disabled = true;
             btn.textContent = 'Starting...';
 
-            fetch('/api/trigger', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                showNotification(data.message, data.success);
-                if (data.success) {
-                    // Force immediate status update
-                    setTimeout(updateStatus, 500);
-                    resetCountdown();
-                } else {
+            fetch('/api/trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    if (data.success) {
+                        setTimeout(updateStatus, 500);
+                        resetCountdown();
+                    } else {
+                        btn.disabled = false;
+                        btn.textContent = 'Download Now';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error triggering download:', error);
+                    showNotification('Failed to trigger download', false);
                     btn.disabled = false;
                     btn.textContent = 'Download Now';
-                }
-            })
-            .catch(error => {
-                console.error('Error triggering download:', error);
-                showNotification('Failed to trigger download', false);
-                btn.disabled = false;
-                btn.textContent = 'Download Now';
-            });
+                });
+        }
+
+        function clearHistory() {
+            if (!confirm('Clear all download history?')) return;
+            fetch('/api/clear/history', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    if (data.success) loadHistory();
+                })
+                .catch(error => showNotification('Failed to clear history', false));
+        }
+
+        function clearFailed() {
+            if (!confirm('Clear all failed items?')) return;
+            fetch('/api/clear/failed', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    if (data.success) loadFailed();
+                })
+                .catch(error => showNotification('Failed to clear failed items', false));
+        }
+
+        function clearStats() {
+            if (!confirm('Clear all download statistics?')) return;
+            fetch('/api/clear/stats', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    if (data.success) updateStatus();
+                })
+                .catch(error => showNotification('Failed to clear statistics', false));
         }
 
         function resetCountdown() {
@@ -441,7 +824,6 @@
             countdownInterval = setInterval(() => {
                 countdown--;
                 document.getElementById('countdown').textContent = countdown;
-
                 if (countdown <= 0) {
                     updateStatus();
                     resetCountdown();
@@ -449,7 +831,7 @@
             }, 1000);
         }
 
-        // Initial update
+        // Initial load
         updateStatus();
         startCountdown();
     </script>

@@ -23,6 +23,8 @@ DOWNLOAD_TIMEOUT_SECONDS = 600
 INTER_BATCH_DELAY_SECONDS = 3
 DEFAULT_RETRY_ATTEMPTS = 3
 RETRY_BASE_DELAY_SECONDS = 2
+MAX_HISTORY_ITEMS = 100
+MAX_FAILED_ITEMS = 50
 
 # Logging configuration
 log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -94,8 +96,9 @@ job_lock = threading.Lock()
 job_running = threading.Event()
 state_lock = threading.Lock()
 
-# Stats persistence file
+# Persistence files
 STATS_FILE = os.path.join(config_directory, "stats.json")
+HISTORY_FILE = os.path.join(config_directory, "history.json")
 
 def get_default_stats() -> dict[str, Any]:
     """Return default stats structure."""
@@ -127,6 +130,27 @@ def save_stats(stats: dict[str, Any]) -> None:
     except IOError as e:
         logger.warning(f"Failed to save stats to disk: {e}")
 
+def load_history() -> dict[str, list[dict[str, Any]]]:
+    """Load download history from disk."""
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load history from disk: {e}")
+    return {"downloads": [], "failed": []}
+
+def save_history(history: dict[str, list[dict[str, Any]]]) -> None:
+    """Persist history to disk."""
+    try:
+        with open(HISTORY_FILE, 'w') as f:
+            json.dump(history, f, indent=2)
+    except IOError as e:
+        logger.warning(f"Failed to save history to disk: {e}")
+
+# Load persisted data
+_history_data = load_history()
+
 # Shared state for web UI
 app_state: dict[str, Any] = {
     "last_run": None,
@@ -134,7 +158,29 @@ app_state: dict[str, Any] = {
     "current_status": "idle",
     "stats": load_stats(),
     "current_item": None,
-    "favorites_count": {"tracks": 0, "albums": 0, "artists": 0}
+    "favorites_count": {"tracks": 0, "albums": 0, "artists": 0},
+    "history": _history_data.get("downloads", []),
+    "failed_items": _history_data.get("failed", []),
+    "activity": {
+        "current_type": None,
+        "current_name": None,
+        "progress": {"current": 0, "total": 0},
+        "batch_progress": {"current": 0, "total": 0}
+    }
+}
+
+# Application settings for display (read-only)
+app_settings: dict[str, Any] = {
+    "quality": quality,
+    "check_interval_minutes": check_interval_minutes,
+    "max_workers_tracks": max_workers_tracks,
+    "max_workers_albums": max_workers_albums,
+    "max_workers_artists": max_workers_artists,
+    "batch_size": batch_size,
+    "music_directory": music_directory,
+    "config_directory": config_directory,
+    "web_ui_port": web_ui_port,
+    "auth_enabled": bool(web_ui_username and web_ui_password)
 }
 
 def update_state(key: str, value: Any) -> None:
@@ -159,6 +205,92 @@ def update_favorites_count(tracks: int, albums: int, artists: int) -> None:
             "albums": albums,
             "artists": artists
         }
+
+def update_activity(
+    current_type: str | None = None,
+    current_name: str | None = None,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+    batch_current: int | None = None,
+    batch_total: int | None = None
+) -> None:
+    """Thread-safe activity update."""
+    with state_lock:
+        if current_type is not None:
+            app_state["activity"]["current_type"] = current_type
+        if current_name is not None:
+            app_state["activity"]["current_name"] = current_name
+        if progress_current is not None:
+            app_state["activity"]["progress"]["current"] = progress_current
+        if progress_total is not None:
+            app_state["activity"]["progress"]["total"] = progress_total
+        if batch_current is not None:
+            app_state["activity"]["batch_progress"]["current"] = batch_current
+        if batch_total is not None:
+            app_state["activity"]["batch_progress"]["total"] = batch_total
+
+def clear_activity() -> None:
+    """Clear activity state."""
+    with state_lock:
+        app_state["activity"] = {
+            "current_type": None,
+            "current_name": None,
+            "progress": {"current": 0, "total": 0},
+            "batch_progress": {"current": 0, "total": 0}
+        }
+
+def add_to_history(item_name: str, item_type: str, item_id: str, success: bool) -> None:
+    """Add an item to download history."""
+    with state_lock:
+        entry = {
+            "name": item_name,
+            "type": item_type,
+            "id": item_id,
+            "timestamp": time.time(),
+            "success": success
+        }
+
+        if success:
+            app_state["history"].insert(0, entry)
+            # Trim history to max size
+            if len(app_state["history"]) > MAX_HISTORY_ITEMS:
+                app_state["history"] = app_state["history"][:MAX_HISTORY_ITEMS]
+        else:
+            # Add to failed items with error info
+            entry["error"] = app_state["stats"].get("last_error", "Unknown error")
+            app_state["failed_items"].insert(0, entry)
+            if len(app_state["failed_items"]) > MAX_FAILED_ITEMS:
+                app_state["failed_items"] = app_state["failed_items"][:MAX_FAILED_ITEMS]
+
+        # Persist history
+        save_history({
+            "downloads": app_state["history"],
+            "failed": app_state["failed_items"]
+        })
+
+def clear_history() -> None:
+    """Clear download history."""
+    with state_lock:
+        app_state["history"] = []
+        save_history({
+            "downloads": [],
+            "failed": app_state["failed_items"]
+        })
+
+def clear_failed_items() -> None:
+    """Clear failed items list."""
+    with state_lock:
+        app_state["failed_items"] = []
+        save_history({
+            "downloads": app_state["history"],
+            "failed": []
+        })
+
+def clear_all_stats() -> None:
+    """Clear all statistics."""
+    with state_lock:
+        app_state["stats"] = get_default_stats()
+        save_stats(app_state["stats"])
 
 qobuz = QobuzDL(
     directory=music_directory,
@@ -240,13 +372,35 @@ def download_item_with_retry(
 
     return (False, item)
 
+def get_item_name(item: Any, item_type: str) -> str:
+    """Extract a display name from an item."""
+    try:
+        if item_type == "tracks":
+            artist = getattr(item, 'performer', {})
+            artist_name = artist.get('name', 'Unknown Artist') if isinstance(artist, dict) else str(artist)
+            title = getattr(item, 'title', 'Unknown Track')
+            return f"{artist_name} - {title}"
+        elif item_type == "albums":
+            artist = getattr(item, 'artist', {})
+            artist_name = artist.get('name', 'Unknown Artist') if isinstance(artist, dict) else str(artist)
+            title = getattr(item, 'title', 'Unknown Album')
+            return f"{artist_name} - {title}"
+        elif item_type == "artists":
+            return getattr(item, 'name', 'Unknown Artist')
+        else:
+            return f"Item {getattr(item, 'id', 'Unknown')}"
+    except Exception:
+        return f"Item {getattr(item, 'id', 'Unknown')}"
+
+
 def batch_download(
     qobuz_dl: QobuzDL,
     user: qobuz_cl.User,
     items: list[Any],
     is_album: bool = True,
     max_workers: int = 1,
-    current_batch_size: int = 10
+    current_batch_size: int = 10,
+    item_type: str = "items"
 ) -> tuple[list[Any], list[Any]]:
     """
     Download items in parallel batches with a limited number of workers.
@@ -259,12 +413,17 @@ def batch_download(
         is_album: Whether items are albums
         max_workers: Number of parallel workers
         current_batch_size: Items per batch
+        item_type: Type of items for activity tracking
 
     Returns:
         Tuple of (successful_items, failed_items)
     """
     successful_items: list[Any] = []
     failed_items: list[Any] = []
+    total_items = len(items)
+
+    # Update activity with total count
+    update_activity(current_type=item_type, progress_total=total_items, progress_current=0)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Create a list of tasks with all necessary information
@@ -272,25 +431,46 @@ def batch_download(
 
         # Process items in batches to avoid overwhelming the system
         effective_batch_size = min(current_batch_size, len(items))
+        total_batches = (len(tasks) + effective_batch_size - 1) // effective_batch_size
+        current_batch_num = 0
 
         for i in range(0, len(tasks), effective_batch_size):
+            current_batch_num += 1
             batch = tasks[i:i+effective_batch_size]
             logger.info(f"Processing batch of {len(batch)} items ({i+1}-{min(i+effective_batch_size, len(items))} of {len(items)})")
 
+            # Update batch progress
+            update_activity(batch_current=current_batch_num, batch_total=total_batches)
+
             # Submit all tasks in this batch (using retry-enabled download)
-            futures = [executor.submit(download_item_with_retry, task) for task in batch]
+            futures_to_items = {executor.submit(download_item_with_retry, task): task[2] for task in batch}
 
             # Process results as they complete
-            for future in futures:
+            for future in futures_to_items:
+                item = futures_to_items[future]
+                item_name = get_item_name(item, item_type)
+                item_id = str(getattr(item, 'id', 'unknown'))
+
+                # Update current item being processed
+                update_activity(current_name=item_name)
+
                 try:
-                    success, item = future.result(timeout=DOWNLOAD_TIMEOUT_SECONDS)
+                    success, result_item = future.result(timeout=DOWNLOAD_TIMEOUT_SECONDS)
                     if success:
-                        successful_items.append(item)
+                        successful_items.append(result_item)
+                        add_to_history(item_name, item_type, item_id, success=True)
                     else:
-                        failed_items.append(item)
+                        failed_items.append(result_item)
+                        add_to_history(item_name, item_type, item_id, success=False)
                 except Exception as e:
                     logger.error(f"Worker thread exception: {e}")
                     update_stats("last_error", value=str(e))
+                    failed_items.append(item)
+                    add_to_history(item_name, item_type, item_id, success=False)
+
+                # Update progress
+                completed = len(successful_items) + len(failed_items)
+                update_activity(progress_current=completed)
 
             # Delay between batches to let CPU cool down (important for NAS)
             if i + effective_batch_size < len(tasks):
@@ -334,7 +514,8 @@ def process_favorites() -> None:
                 qobuz, qobuz_user, favorite_tracks,
                 is_album=False,
                 max_workers=max_workers_tracks,
-                current_batch_size=batch_size
+                current_batch_size=batch_size,
+                item_type="tracks"
             )
             update_stats("tracks_downloaded", increment=len(successful_tracks))
             update_stats("tracks_failed", increment=len(failed_tracks))
@@ -347,7 +528,8 @@ def process_favorites() -> None:
                 qobuz, qobuz_user, favorite_albums,
                 is_album=True,
                 max_workers=max_workers_albums,
-                current_batch_size=batch_size
+                current_batch_size=batch_size,
+                item_type="albums"
             )
             update_stats("albums_downloaded", increment=len(successful_albums))
             update_stats("albums_failed", increment=len(failed_albums))
@@ -360,7 +542,8 @@ def process_favorites() -> None:
                 qobuz, qobuz_user, favorite_artists,
                 is_album=False,
                 max_workers=max_workers_artists,
-                current_batch_size=batch_size
+                current_batch_size=batch_size,
+                item_type="artists"
             )
             update_stats("artists_downloaded", increment=len(successful_artists))
             update_stats("artists_failed", increment=len(failed_artists))
@@ -368,13 +551,15 @@ def process_favorites() -> None:
 
         update_state("current_status", "idle")
         update_state("last_run", time.time())
+        clear_activity()
 
     except Exception as e:
         logger.error(f"Process favorites error: {e}", exc_info=True)
         update_stats("last_error", value=str(e))
         update_state("current_status", "error")
     finally:
-        # Ensure we always clear the running flag
+        # Ensure we always clear the running flag and activity
+        clear_activity()
         job_running.clear()
 
 def job() -> None:
@@ -464,7 +649,11 @@ if __name__ == "__main__":
             job_function=job,
             auth_username=web_ui_username,
             auth_password=web_ui_password,
-            secret_key=web_ui_secret_key
+            secret_key=web_ui_secret_key,
+            app_settings=app_settings,
+            clear_history_func=clear_history,
+            clear_failed_func=clear_failed_items,
+            clear_stats_func=clear_all_stats
         )
 
         # Run Flask in a separate thread

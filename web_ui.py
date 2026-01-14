@@ -80,7 +80,11 @@ def create_app(
     job_function: Callable[[], None] | None = None,
     auth_username: str | None = None,
     auth_password: str | None = None,
-    secret_key: str | None = None
+    secret_key: str | None = None,
+    app_settings: dict[str, Any] | None = None,
+    clear_history_func: Callable[[], None] | None = None,
+    clear_failed_func: Callable[[], None] | None = None,
+    clear_stats_func: Callable[[], None] | None = None
 ) -> Flask:
     """
     Create and configure the Flask app with authentication.
@@ -92,6 +96,10 @@ def create_app(
         auth_username: Username for web UI authentication
         auth_password: Password for web UI authentication
         secret_key: Secret key for session encryption
+        app_settings: Application settings for display
+        clear_history_func: Function to clear download history
+        clear_failed_func: Function to clear failed items
+        clear_stats_func: Function to clear all statistics
 
     Returns:
         Configured Flask application
@@ -206,7 +214,8 @@ def create_app(
             "next_run_timestamp": app_state["next_run"],
             "stats": app_state["stats"],
             "favorites_count": app_state["favorites_count"],
-            "current_item": app_state["current_item"]
+            "current_item": app_state["current_item"],
+            "activity": app_state.get("activity", {})
         }
         return jsonify(status)
 
@@ -215,6 +224,75 @@ def create_app(
     def get_stats() -> Any:
         """Get download statistics."""
         return jsonify(app_state["stats"])
+
+    @app.route('/api/history')
+    @login_required
+    def get_history() -> Any:
+        """Get download history."""
+        history = app_state.get("history", [])
+        # Format timestamps for display
+        formatted = []
+        for item in history:
+            formatted.append({
+                **item,
+                "timestamp_formatted": format_timestamp(item.get("timestamp"))
+            })
+        return jsonify(formatted)
+
+    @app.route('/api/failed')
+    @login_required
+    def get_failed() -> Any:
+        """Get failed downloads list."""
+        failed = app_state.get("failed_items", [])
+        # Format timestamps for display
+        formatted = []
+        for item in failed:
+            formatted.append({
+                **item,
+                "timestamp_formatted": format_timestamp(item.get("timestamp"))
+            })
+        return jsonify(formatted)
+
+    @app.route('/api/activity')
+    @login_required
+    def get_activity() -> Any:
+        """Get current download activity."""
+        return jsonify(app_state.get("activity", {}))
+
+    @app.route('/api/settings')
+    @login_required
+    def get_settings() -> Any:
+        """Get application settings (read-only)."""
+        if app_settings:
+            return jsonify(app_settings)
+        return jsonify({})
+
+    @app.route('/api/clear/history', methods=['POST'])
+    @login_required
+    def clear_history() -> tuple[Any, int]:
+        """Clear download history."""
+        if clear_history_func:
+            clear_history_func()
+            return jsonify({"success": True, "message": "History cleared"}), 200
+        return jsonify({"success": False, "message": "Operation not available"}), 500
+
+    @app.route('/api/clear/failed', methods=['POST'])
+    @login_required
+    def clear_failed() -> tuple[Any, int]:
+        """Clear failed items list."""
+        if clear_failed_func:
+            clear_failed_func()
+            return jsonify({"success": True, "message": "Failed items cleared"}), 200
+        return jsonify({"success": False, "message": "Operation not available"}), 500
+
+    @app.route('/api/clear/stats', methods=['POST'])
+    @login_required
+    def clear_stats() -> tuple[Any, int]:
+        """Clear all statistics."""
+        if clear_stats_func:
+            clear_stats_func()
+            return jsonify({"success": True, "message": "Statistics cleared"}), 200
+        return jsonify({"success": False, "message": "Operation not available"}), 500
 
     @app.route('/api/trigger', methods=['POST'])
     @login_required
