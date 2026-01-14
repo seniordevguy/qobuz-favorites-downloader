@@ -89,7 +89,13 @@ def create_app(
     pause_func: Callable[[], bool] | None = None,
     retry_failed_func: Callable[[], tuple[bool, str]] | None = None,
     get_queue_func: Callable[[], dict[str, Any]] | None = None,
-    log_file_path: str | None = None
+    log_file_path: str | None = None,
+    search_func: Callable[[str, str, int], dict[str, Any]] | None = None,
+    add_to_queue_func: Callable[[str, str, str], tuple[bool, str]] | None = None,
+    get_manual_queue_func: Callable[[], list[dict[str, Any]]] | None = None,
+    clear_manual_queue_func: Callable[[], None] | None = None,
+    remove_from_queue_func: Callable[[str, str], bool] | None = None,
+    start_queue_func: Callable[[], tuple[bool, str]] | None = None
 ) -> Flask:
     """
     Create and configure the Flask app with authentication.
@@ -109,6 +115,12 @@ def create_app(
         retry_failed_func: Function to retry failed downloads
         get_queue_func: Function to get download queue
         log_file_path: Path to the log file
+        search_func: Function to search Qobuz
+        add_to_queue_func: Function to add item to download queue
+        get_manual_queue_func: Function to get manual download queue
+        clear_manual_queue_func: Function to clear manual queue
+        remove_from_queue_func: Function to remove item from queue
+        start_queue_func: Function to start processing download queue
 
     Returns:
         Configured Flask application
@@ -536,6 +548,98 @@ self.addEventListener('activate', event => {
 });
 '''
         return Response(sw_content, mimetype='application/javascript')
+
+    # Search and Download endpoints
+    @app.route('/api/search')
+    @login_required
+    def search() -> Any:
+        """Search Qobuz for tracks, albums, or artists."""
+        if search_func is None:
+            return jsonify({"success": False, "error": "Search not available"}), 500
+
+        query = request.args.get('q', '').strip()
+        search_type = request.args.get('type', 'albums')
+        limit = min(int(request.args.get('limit', 20)), 50)
+
+        if not query:
+            return jsonify({"success": False, "error": "Query is required"}), 400
+
+        if search_type not in ['tracks', 'albums', 'artists']:
+            return jsonify({"success": False, "error": "Invalid search type"}), 400
+
+        results = search_func(query, search_type, limit)
+        return jsonify(results)
+
+    @app.route('/api/download/queue', methods=['POST'])
+    @login_required
+    def add_to_download_queue() -> tuple[Any, int]:
+        """Add an item to the download queue."""
+        if add_to_queue_func is None:
+            return jsonify({"success": False, "message": "Download queue not available"}), 500
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "No data provided"}), 400
+
+        item_id = str(data.get('id', ''))
+        item_type = data.get('type', '')
+        item_name = data.get('name', '')
+
+        if not item_id or not item_type:
+            return jsonify({"success": False, "message": "Missing id or type"}), 400
+
+        success, message = add_to_queue_func(item_id, item_type, item_name)
+        return jsonify({"success": success, "message": message}), 200 if success else 400
+
+    @app.route('/api/download/queue', methods=['GET'])
+    @login_required
+    def get_download_queue() -> Any:
+        """Get the current download queue."""
+        if get_manual_queue_func is None:
+            return jsonify([])
+        return jsonify(get_manual_queue_func())
+
+    @app.route('/api/download/queue/start', methods=['POST'])
+    @login_required
+    def start_download_queue() -> tuple[Any, int]:
+        """Start processing the download queue."""
+        if start_queue_func is None:
+            return jsonify({"success": False, "message": "Queue processing not available"}), 500
+
+        success, message = start_queue_func()
+        return jsonify({"success": success, "message": message}), 200 if success else 400
+
+    @app.route('/api/download/queue/clear', methods=['POST'])
+    @login_required
+    def clear_download_queue() -> tuple[Any, int]:
+        """Clear the download queue."""
+        if clear_manual_queue_func is None:
+            return jsonify({"success": False, "message": "Operation not available"}), 500
+
+        clear_manual_queue_func()
+        return jsonify({"success": True, "message": "Download queue cleared"}), 200
+
+    @app.route('/api/download/queue/remove', methods=['POST'])
+    @login_required
+    def remove_from_download_queue() -> tuple[Any, int]:
+        """Remove an item from the download queue."""
+        if remove_from_queue_func is None:
+            return jsonify({"success": False, "message": "Operation not available"}), 500
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "No data provided"}), 400
+
+        item_id = str(data.get('id', ''))
+        item_type = data.get('type', '')
+
+        if not item_id or not item_type:
+            return jsonify({"success": False, "message": "Missing id or type"}), 400
+
+        success = remove_from_queue_func(item_id, item_type)
+        if success:
+            return jsonify({"success": True, "message": "Item removed from queue"}), 200
+        return jsonify({"success": False, "message": "Item not found in queue"}), 404
 
     def format_timestamp(ts: float | None) -> str:
         """Convert timestamp to readable format."""

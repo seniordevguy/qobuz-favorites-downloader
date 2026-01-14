@@ -404,6 +404,276 @@ def clear_queue() -> None:
         }
 
 
+# Manual download queue
+manual_download_queue: list[dict[str, Any]] = []
+manual_queue_lock = threading.Lock()
+
+
+def search_qobuz(query: str, search_type: str = "albums", limit: int = 20) -> dict[str, Any]:
+    """
+    Search Qobuz for items.
+
+    Args:
+        query: Search query string
+        search_type: Type of search - 'tracks', 'albums', or 'artists'
+        limit: Maximum number of results
+
+    Returns:
+        Dictionary with search results
+    """
+    try:
+        # Ensure Qobuz client is initialized
+        qobuz.get_tokens()
+        qobuz.initialize_client(qobuz_email, qobuz_password, qobuz.app_id, qobuz.secrets)
+
+        # Use the Qobuz API to search
+        results = []
+
+        if search_type == "albums":
+            search_results = qobuz.search_albums(query, limit=limit)
+            for item in search_results:
+                artist_name = item.get('artist', {}).get('name', 'Unknown Artist')
+                results.append({
+                    "id": item.get('id'),
+                    "title": item.get('title', 'Unknown'),
+                    "artist": artist_name,
+                    "name": f"{artist_name} - {item.get('title', 'Unknown')}",
+                    "type": "albums",
+                    "year": item.get('release_date_original', '')[:4] if item.get('release_date_original') else '',
+                    "tracks_count": item.get('tracks_count', 0),
+                    "image": item.get('image', {}).get('small', '') if isinstance(item.get('image'), dict) else '',
+                    "quality": item.get('maximum_bit_depth', 16),
+                    "sample_rate": item.get('maximum_sampling_rate', 44.1)
+                })
+        elif search_type == "tracks":
+            search_results = qobuz.search_tracks(query, limit=limit)
+            for item in search_results:
+                artist_name = item.get('performer', {}).get('name', 'Unknown Artist')
+                album_title = item.get('album', {}).get('title', 'Unknown Album')
+                results.append({
+                    "id": item.get('id'),
+                    "title": item.get('title', 'Unknown'),
+                    "artist": artist_name,
+                    "album": album_title,
+                    "name": f"{artist_name} - {item.get('title', 'Unknown')}",
+                    "type": "tracks",
+                    "duration": item.get('duration', 0),
+                    "image": item.get('album', {}).get('image', {}).get('small', '') if isinstance(item.get('album', {}).get('image'), dict) else '',
+                    "quality": item.get('maximum_bit_depth', 16),
+                    "sample_rate": item.get('maximum_sampling_rate', 44.1)
+                })
+        elif search_type == "artists":
+            search_results = qobuz.search_artists(query, limit=limit)
+            for item in search_results:
+                results.append({
+                    "id": item.get('id'),
+                    "name": item.get('name', 'Unknown Artist'),
+                    "title": item.get('name', 'Unknown Artist'),
+                    "type": "artists",
+                    "albums_count": item.get('albums_count', 0),
+                    "image": item.get('image', {}).get('small', '') if isinstance(item.get('image'), dict) else ''
+                })
+
+        return {
+            "success": True,
+            "results": results,
+            "query": query,
+            "type": search_type,
+            "count": len(results)
+        }
+
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "results": [],
+            "query": query,
+            "type": search_type
+        }
+
+
+def add_to_manual_queue(item_id: str, item_type: str, item_name: str) -> tuple[bool, str]:
+    """
+    Add an item to the manual download queue.
+
+    Args:
+        item_id: Qobuz item ID
+        item_type: Type of item - 'tracks', 'albums', or 'artists'
+        item_name: Display name for the item
+
+    Returns:
+        Tuple of (success, message)
+    """
+    with manual_queue_lock:
+        # Check if already in queue
+        for item in manual_download_queue:
+            if item["id"] == item_id and item["type"] == item_type:
+                return False, "Item already in queue"
+
+        manual_download_queue.append({
+            "id": item_id,
+            "type": item_type,
+            "name": item_name,
+            "status": "pending",
+            "added": time.time()
+        })
+
+    logger.info(f"Added to manual queue: {item_name} ({item_type})")
+    return True, f"Added '{item_name}' to download queue"
+
+
+def get_manual_queue() -> list[dict[str, Any]]:
+    """Get the current manual download queue."""
+    with manual_queue_lock:
+        return list(manual_download_queue)
+
+
+def clear_manual_queue() -> None:
+    """Clear the manual download queue."""
+    with manual_queue_lock:
+        manual_download_queue.clear()
+
+
+def remove_from_manual_queue(item_id: str, item_type: str) -> bool:
+    """Remove an item from the manual download queue."""
+    with manual_queue_lock:
+        for i, item in enumerate(manual_download_queue):
+            if item["id"] == item_id and item["type"] == item_type:
+                manual_download_queue.pop(i)
+                return True
+    return False
+
+
+def download_single_item(item_id: str, item_type: str, item_name: str) -> tuple[bool, str]:
+    """
+    Download a single item by ID.
+
+    Args:
+        item_id: Qobuz item ID
+        item_type: Type of item - 'tracks', 'albums', or 'artists'
+        item_name: Display name for the item
+
+    Returns:
+        Tuple of (success, message)
+    """
+    try:
+        # Ensure Qobuz client is initialized
+        qobuz.get_tokens()
+        qobuz.initialize_client(qobuz_email, qobuz_password, qobuz.app_id, qobuz.secrets)
+
+        is_album = item_type in ["albums", "artists"]
+
+        # Download the item
+        qobuz.download_from_id(item_id, is_album)
+
+        # Add to history
+        add_to_history(item_name, item_type, item_id, success=True)
+
+        # Update stats
+        if item_type == "tracks":
+            update_stats("tracks_downloaded", increment=1)
+        elif item_type == "albums":
+            update_stats("albums_downloaded", increment=1)
+        elif item_type == "artists":
+            update_stats("artists_downloaded", increment=1)
+
+        logger.info(f"Successfully downloaded: {item_name}")
+        return True, f"Successfully downloaded '{item_name}'"
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Failed to download {item_name}: {error_msg}")
+        update_stats("last_error", value=error_msg)
+        add_to_history(item_name, item_type, item_id, success=False)
+
+        if item_type == "tracks":
+            update_stats("tracks_failed", increment=1)
+        elif item_type == "albums":
+            update_stats("albums_failed", increment=1)
+        elif item_type == "artists":
+            update_stats("artists_failed", increment=1)
+
+        return False, f"Failed to download: {error_msg}"
+
+
+def process_manual_queue() -> None:
+    """Process all items in the manual download queue."""
+    if job_running.is_set():
+        logger.info("A job is already running, cannot process manual queue")
+        return
+
+    job_running.set()
+    update_state("current_status", "processing queue")
+
+    try:
+        while True:
+            # Get next item from queue
+            with manual_queue_lock:
+                pending_items = [i for i in manual_download_queue if i["status"] == "pending"]
+                if not pending_items:
+                    break
+
+                current_item = pending_items[0]
+                current_item["status"] = "downloading"
+
+            item_id = current_item["id"]
+            item_type = current_item["type"]
+            item_name = current_item["name"]
+
+            # Update activity
+            update_activity(
+                current_type=item_type,
+                current_name=item_name,
+                progress_current=0,
+                progress_total=1
+            )
+
+            # Check for pause
+            check_pause()
+
+            if shutdown_event.is_set():
+                break
+
+            # Download the item
+            success, message = download_single_item(item_id, item_type, item_name)
+
+            # Update item status and remove from queue
+            with manual_queue_lock:
+                for i, item in enumerate(manual_download_queue):
+                    if item["id"] == item_id and item["type"] == item_type:
+                        manual_download_queue.pop(i)
+                        break
+
+            logger.info(f"Queue item completed: {item_name} - {'Success' if success else 'Failed'}")
+
+    except Exception as e:
+        logger.error(f"Error processing manual queue: {e}", exc_info=True)
+        update_stats("last_error", value=str(e))
+    finally:
+        update_state("current_status", "idle")
+        clear_activity()
+        job_running.clear()
+        pause_event.clear()
+        with state_lock:
+            app_state["is_paused"] = False
+
+
+def start_queue_processing() -> tuple[bool, str]:
+    """Start processing the manual download queue in a background thread."""
+    if job_running.is_set():
+        return False, "A download job is already running"
+
+    with manual_queue_lock:
+        pending = [i for i in manual_download_queue if i["status"] == "pending"]
+        if not pending:
+            return False, "No items in queue to process"
+
+    # Start processing in background
+    threading.Thread(target=process_manual_queue, daemon=True).start()
+    return True, f"Started processing {len(pending)} items"
+
+
 qobuz = QobuzDL(
     directory=music_directory,
     quality=quality,
@@ -808,7 +1078,13 @@ if __name__ == "__main__":
             pause_func=toggle_pause,
             retry_failed_func=retry_failed_items,
             get_queue_func=get_queue_info,
-            log_file_path=log_file
+            log_file_path=log_file,
+            search_func=search_qobuz,
+            add_to_queue_func=add_to_manual_queue,
+            get_manual_queue_func=get_manual_queue,
+            clear_manual_queue_func=clear_manual_queue,
+            remove_from_queue_func=remove_from_manual_queue,
+            start_queue_func=start_queue_processing
         )
 
         # Run Flask in a separate thread

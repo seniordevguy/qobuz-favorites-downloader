@@ -86,6 +86,7 @@ LOG_FILE_BACKUP_COUNT=3
 The web UI provides a real-time dashboard showing:
 - Current download status with visual indicators
 - **Manual trigger button** to download immediately (no need to wait for schedule)
+- **Search & Download** - Search Qobuz for albums, tracks, and artists and queue them for download
 - **Pause/Resume** - Pause active downloads and resume when ready
 - **Download queue** - View pending, processing, and completed items
 - **Download history** - Track all successful downloads
@@ -112,6 +113,15 @@ When `WEB_UI_USERNAME` and `WEB_UI_PASSWORD` are configured:
 
 ### Manual Downloads
 Click the "Download Now" button in the web UI to immediately trigger a download job. The button will be disabled while a job is running. Rate limiting prevents accidental rapid triggers.
+
+### Search & Download
+Use the "Search" tab to find and download specific content from Qobuz:
+1. Enter a search query and select the type (Albums, Tracks, or Artists)
+2. Browse results with album art, quality info, and track counts
+3. Click "Add to Queue" to queue items for download
+4. Review your download queue at the bottom of the Search tab
+5. Click "Start Downloads" to process the queue
+6. Items are downloaded with the same quality settings as favorites
 
 ### Download Queue & Pause/Resume
 - View the download queue in the "Queue" tab to see pending, processing, and completed items
