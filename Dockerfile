@@ -1,5 +1,6 @@
 # Multi-stage build for smaller image size and better caching
-FROM --platform=linux/amd64 python:3.12-alpine AS builder
+# Supports multiple architectures (amd64, arm64, arm/v7) for NAS compatibility
+FROM python:3.12-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache gcc musl-dev libffi-dev
@@ -14,7 +15,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Final stage - minimal runtime image
-FROM --platform=linux/amd64 python:3.12-alpine
+FROM python:3.12-alpine
 
 # Install runtime dependencies only
 RUN apk add --no-cache libffi

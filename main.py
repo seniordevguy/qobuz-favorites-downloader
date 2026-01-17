@@ -1,16 +1,30 @@
+import json
 import logging
 import os
 import schedule
+import signal
+import sys
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from logging.handlers import RotatingFileHandler
+from typing import Any
+
 from qobuz_dl.core import QobuzDL
 from dotenv import load_dotenv
 import qobuz.api as qobuz_api
 import qobuz as qobuz_cl
 
 load_dotenv()
+
+# Constants
+API_PAGINATION_LIMIT = 50
+DOWNLOAD_TIMEOUT_SECONDS = 600
+INTER_BATCH_DELAY_SECONDS = 3
+DEFAULT_RETRY_ATTEMPTS = 3
+RETRY_BASE_DELAY_SECONDS = 2
+MAX_HISTORY_ITEMS = 100
+MAX_FAILED_ITEMS = 50
 
 # Logging configuration
 log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -44,6 +58,15 @@ if log_file_max_mb > 0:
 else:
     logger.info("File logging disabled")
 
+def validate_config() -> None:
+    """Validate required environment variables are set."""
+    required = ["QOBUZ_EMAIL", "QOBUZ_PASSWORD"]
+    missing = [var for var in required if not os.environ.get(var)]
+    if missing:
+        raise EnvironmentError(f"Missing required environment variables: {', '.join(missing)}")
+
+validate_config()
+
 qobuz_email = os.environ["QOBUZ_EMAIL"]
 qobuz_password = os.environ["QOBUZ_PASSWORD"]
 music_directory = os.environ.get("MUSIC_DIRECTORY", "/downloads")
@@ -59,16 +82,28 @@ check_interval_minutes = int(os.environ.get("CHECK_INTERVAL_MINUTES", 30))
 enable_web_ui = os.environ.get("ENABLE_WEB_UI", "true").lower() == "true"
 web_ui_port = int(os.environ.get("WEB_UI_PORT", 5000))
 
+# Web UI Authentication (optional - if not set, no auth required)
+web_ui_username = os.environ.get("WEB_UI_USERNAME")
+web_ui_password = os.environ.get("WEB_UI_PASSWORD")
+web_ui_secret_key = os.environ.get("WEB_UI_SECRET_KEY")
+
+# Warn if auth is not configured when web UI is enabled
+if enable_web_ui and not (web_ui_username and web_ui_password):
+    logger.warning("Web UI authentication is NOT configured. Set WEB_UI_USERNAME and WEB_UI_PASSWORD for security.")
+
 # Use a threading.Lock for thread synchronization
 job_lock = threading.Lock()
 job_running = threading.Event()
+state_lock = threading.Lock()
+pause_event = threading.Event()  # For pause/resume functionality
 
-# Shared state for web UI
-app_state = {
-    "last_run": None,
-    "next_run": None,
-    "current_status": "idle",
-    "stats": {
+# Persistence files
+STATS_FILE = os.path.join(config_directory, "stats.json")
+HISTORY_FILE = os.path.join(config_directory, "history.json")
+
+def get_default_stats() -> dict[str, Any]:
+    """Return default stats structure."""
+    return {
         "tracks_downloaded": 0,
         "albums_downloaded": 0,
         "artists_downloaded": 0,
@@ -76,10 +111,575 @@ app_state = {
         "albums_failed": 0,
         "artists_failed": 0,
         "last_error": None
-    },
+    }
+
+def load_stats() -> dict[str, Any]:
+    """Load stats from disk if available."""
+    default_stats = get_default_stats()
+    if os.path.exists(STATS_FILE):
+        try:
+            with open(STATS_FILE, 'r') as f:
+                loaded_stats = json.load(f)
+            if not isinstance(loaded_stats, dict):
+                logger.warning("Stats file is not a JSON object; using defaults.")
+                return default_stats
+            merged_stats = default_stats.copy()
+            merged_stats.update(loaded_stats)
+            return merged_stats
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load stats from disk: {e}")
+    return default_stats
+
+def save_stats(stats: dict[str, Any]) -> None:
+    """Persist stats to disk."""
+    try:
+        with open(STATS_FILE, 'w') as f:
+            json.dump(stats, f, indent=2)
+    except IOError as e:
+        logger.warning(f"Failed to save stats to disk: {e}")
+
+def load_history() -> dict[str, list[dict[str, Any]]]:
+    """Load download history from disk."""
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load history from disk: {e}")
+    return {"downloads": [], "failed": []}
+
+def save_history(history: dict[str, list[dict[str, Any]]]) -> None:
+    """Persist history to disk."""
+    try:
+        with open(HISTORY_FILE, 'w') as f:
+            json.dump(history, f, indent=2)
+    except IOError as e:
+        logger.warning(f"Failed to save history to disk: {e}")
+
+# Load persisted data
+_history_data = load_history()
+
+# Shared state for web UI
+app_state: dict[str, Any] = {
+    "last_run": None,
+    "next_run": None,
+    "current_status": "idle",
+    "stats": load_stats(),
     "current_item": None,
-    "favorites_count": {"tracks": 0, "albums": 0, "artists": 0}
+    "favorites_count": {"tracks": 0, "albums": 0, "artists": 0},
+    "history": _history_data.get("downloads", []),
+    "failed_items": _history_data.get("failed", []),
+    "activity": {
+        "current_type": None,
+        "current_name": None,
+        "progress": {"current": 0, "total": 0},
+        "batch_progress": {"current": 0, "total": 0}
+    },
+    "is_paused": False,
+    "queue": {
+        "pending": 0,
+        "processing": 0,
+        "completed": 0,
+        "failed": 0
+    },
+    "queue_items": []
 }
+
+# Application settings for display (read-only)
+app_settings: dict[str, Any] = {
+    "quality": quality,
+    "check_interval_minutes": check_interval_minutes,
+    "max_workers_tracks": max_workers_tracks,
+    "max_workers_albums": max_workers_albums,
+    "max_workers_artists": max_workers_artists,
+    "batch_size": batch_size,
+    "music_directory": music_directory,
+    "config_directory": config_directory,
+    "web_ui_port": web_ui_port,
+    "auth_enabled": bool(web_ui_username and web_ui_password)
+}
+
+def update_state(key: str, value: Any) -> None:
+    """Thread-safe state update."""
+    with state_lock:
+        app_state[key] = value
+
+def update_stats(key: str, increment: int = 0, value: Any = None) -> None:
+    """Thread-safe stats update with optional persistence."""
+    with state_lock:
+        if value is not None:
+            app_state["stats"][key] = value
+        else:
+            app_state["stats"][key] += increment
+        save_stats(app_state["stats"])
+
+def update_favorites_count(tracks: int, albums: int, artists: int) -> None:
+    """Thread-safe favorites count update."""
+    with state_lock:
+        app_state["favorites_count"] = {
+            "tracks": tracks,
+            "albums": albums,
+            "artists": artists
+        }
+
+def update_activity(
+    current_type: str | None = None,
+    current_name: str | None = None,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+    batch_current: int | None = None,
+    batch_total: int | None = None
+) -> None:
+    """Thread-safe activity update."""
+    with state_lock:
+        if current_type is not None:
+            app_state["activity"]["current_type"] = current_type
+        if current_name is not None:
+            app_state["activity"]["current_name"] = current_name
+        if progress_current is not None:
+            app_state["activity"]["progress"]["current"] = progress_current
+        if progress_total is not None:
+            app_state["activity"]["progress"]["total"] = progress_total
+        if batch_current is not None:
+            app_state["activity"]["batch_progress"]["current"] = batch_current
+        if batch_total is not None:
+            app_state["activity"]["batch_progress"]["total"] = batch_total
+
+def clear_activity() -> None:
+    """Clear activity state."""
+    with state_lock:
+        app_state["activity"] = {
+            "current_type": None,
+            "current_name": None,
+            "progress": {"current": 0, "total": 0},
+            "batch_progress": {"current": 0, "total": 0}
+        }
+
+def add_to_history(item_name: str, item_type: str, item_id: str, success: bool) -> None:
+    """Add an item to download history."""
+    with state_lock:
+        entry = {
+            "name": item_name,
+            "type": item_type,
+            "id": item_id,
+            "timestamp": time.time(),
+            "success": success
+        }
+
+        if success:
+            app_state["history"].insert(0, entry)
+            # Trim history to max size
+            if len(app_state["history"]) > MAX_HISTORY_ITEMS:
+                app_state["history"] = app_state["history"][:MAX_HISTORY_ITEMS]
+        else:
+            # Add to failed items with error info
+            entry["error"] = app_state["stats"].get("last_error", "Unknown error")
+            app_state["failed_items"].insert(0, entry)
+            if len(app_state["failed_items"]) > MAX_FAILED_ITEMS:
+                app_state["failed_items"] = app_state["failed_items"][:MAX_FAILED_ITEMS]
+
+        # Persist history
+        save_history({
+            "downloads": app_state["history"],
+            "failed": app_state["failed_items"]
+        })
+
+def clear_history() -> None:
+    """Clear download history."""
+    with state_lock:
+        app_state["history"] = []
+        save_history({
+            "downloads": [],
+            "failed": app_state["failed_items"]
+        })
+
+def clear_failed_items() -> None:
+    """Clear failed items list."""
+    with state_lock:
+        app_state["failed_items"] = []
+        save_history({
+            "downloads": app_state["history"],
+            "failed": []
+        })
+
+def clear_all_stats() -> None:
+    """Clear all statistics."""
+    with state_lock:
+        app_state["stats"] = get_default_stats()
+        save_stats(app_state["stats"])
+
+
+def toggle_pause() -> bool:
+    """Toggle pause state for downloads."""
+    with state_lock:
+        if pause_event.is_set():
+            pause_event.clear()
+            app_state["is_paused"] = False
+            logger.info("Downloads resumed")
+        else:
+            pause_event.set()
+            app_state["is_paused"] = True
+            logger.info("Downloads paused")
+        return app_state["is_paused"]
+
+
+def check_pause() -> None:
+    """Block if paused, until resumed."""
+    while pause_event.is_set() and not shutdown_event.is_set():
+        time.sleep(0.5)
+
+
+def retry_failed_items() -> tuple[bool, str]:
+    """Retry all failed download items."""
+    with state_lock:
+        failed_items = app_state.get("failed_items", [])
+        if not failed_items:
+            return False, "No failed items to retry"
+
+        # Move failed items back to retry queue
+        count = len(failed_items)
+        app_state["retry_queue"] = list(failed_items)
+        app_state["failed_items"] = []
+
+        # Save cleaned history
+        save_history({
+            "downloads": app_state["history"],
+            "failed": []
+        })
+
+    logger.info(f"Queued {count} failed items for retry")
+    return True, f"Queued {count} items for retry. Start a new download to process them."
+
+
+def get_queue_info() -> dict[str, Any]:
+    """Get current queue information."""
+    with state_lock:
+        return {
+            "items": app_state.get("queue_items", [])[:50],  # Limit to 50 items
+            "stats": app_state.get("queue", {
+                "pending": 0,
+                "processing": 0,
+                "completed": 0,
+                "failed": 0
+            })
+        }
+
+
+def update_queue(
+    pending: int | None = None,
+    processing: int | None = None,
+    completed: int | None = None,
+    failed: int | None = None,
+    items: list[dict[str, Any]] | None = None
+) -> None:
+    """Update queue statistics."""
+    with state_lock:
+        if pending is not None:
+            app_state["queue"]["pending"] = pending
+        if processing is not None:
+            app_state["queue"]["processing"] = processing
+        if completed is not None:
+            app_state["queue"]["completed"] = completed
+        if failed is not None:
+            app_state["queue"]["failed"] = failed
+        if items is not None:
+            app_state["queue_items"] = items
+
+
+def add_to_queue(name: str, item_type: str, status: str = "pending") -> None:
+    """Add an item to the visible queue."""
+    with state_lock:
+        app_state["queue_items"].insert(0, {
+            "name": name,
+            "type": item_type,
+            "status": status
+        })
+        # Limit queue size for display
+        if len(app_state["queue_items"]) > 100:
+            app_state["queue_items"] = app_state["queue_items"][:100]
+
+
+def clear_queue() -> None:
+    """Clear the queue display."""
+    with state_lock:
+        app_state["queue_items"] = []
+        app_state["queue"] = {
+            "pending": 0,
+            "processing": 0,
+            "completed": 0,
+            "failed": 0
+        }
+
+
+# Manual download queue
+manual_download_queue: list[dict[str, Any]] = []
+manual_queue_lock = threading.Lock()
+
+
+def search_qobuz(query: str, search_type: str = "albums", limit: int = 20) -> dict[str, Any]:
+    """
+    Search Qobuz for items.
+
+    Args:
+        query: Search query string
+        search_type: Type of search - 'tracks', 'albums', or 'artists'
+        limit: Maximum number of results
+
+    Returns:
+        Dictionary with search results
+    """
+    try:
+        # Ensure Qobuz client is initialized
+        qobuz.get_tokens()
+        qobuz.initialize_client(qobuz_email, qobuz_password, qobuz.app_id, qobuz.secrets)
+
+        # Use the Qobuz API to search
+        results = []
+
+        if search_type == "albums":
+            search_results = qobuz.search_albums(query, limit=limit)
+            for item in search_results:
+                artist_name = item.get('artist', {}).get('name', 'Unknown Artist')
+                results.append({
+                    "id": item.get('id'),
+                    "title": item.get('title', 'Unknown'),
+                    "artist": artist_name,
+                    "name": f"{artist_name} - {item.get('title', 'Unknown')}",
+                    "type": "albums",
+                    "year": item.get('release_date_original', '')[:4] if item.get('release_date_original') else '',
+                    "tracks_count": item.get('tracks_count', 0),
+                    "image": item.get('image', {}).get('small', '') if isinstance(item.get('image'), dict) else '',
+                    "quality": item.get('maximum_bit_depth', 16),
+                    "sample_rate": item.get('maximum_sampling_rate', 44.1)
+                })
+        elif search_type == "tracks":
+            search_results = qobuz.search_tracks(query, limit=limit)
+            for item in search_results:
+                artist_name = item.get('performer', {}).get('name', 'Unknown Artist')
+                album_title = item.get('album', {}).get('title', 'Unknown Album')
+                results.append({
+                    "id": item.get('id'),
+                    "title": item.get('title', 'Unknown'),
+                    "artist": artist_name,
+                    "album": album_title,
+                    "name": f"{artist_name} - {item.get('title', 'Unknown')}",
+                    "type": "tracks",
+                    "duration": item.get('duration', 0),
+                    "image": item.get('album', {}).get('image', {}).get('small', '') if isinstance(item.get('album', {}).get('image'), dict) else '',
+                    "quality": item.get('maximum_bit_depth', 16),
+                    "sample_rate": item.get('maximum_sampling_rate', 44.1)
+                })
+        elif search_type == "artists":
+            search_results = qobuz.search_artists(query, limit=limit)
+            for item in search_results:
+                results.append({
+                    "id": item.get('id'),
+                    "name": item.get('name', 'Unknown Artist'),
+                    "title": item.get('name', 'Unknown Artist'),
+                    "type": "artists",
+                    "albums_count": item.get('albums_count', 0),
+                    "image": item.get('image', {}).get('small', '') if isinstance(item.get('image'), dict) else ''
+                })
+
+        return {
+            "success": True,
+            "results": results,
+            "query": query,
+            "type": search_type,
+            "count": len(results)
+        }
+
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "results": [],
+            "query": query,
+            "type": search_type
+        }
+
+
+def add_to_manual_queue(item_id: str, item_type: str, item_name: str) -> tuple[bool, str]:
+    """
+    Add an item to the manual download queue.
+
+    Args:
+        item_id: Qobuz item ID
+        item_type: Type of item - 'tracks', 'albums', or 'artists'
+        item_name: Display name for the item
+
+    Returns:
+        Tuple of (success, message)
+    """
+    with manual_queue_lock:
+        # Check if already in queue
+        for item in manual_download_queue:
+            if item["id"] == item_id and item["type"] == item_type:
+                return False, "Item already in queue"
+
+        manual_download_queue.append({
+            "id": item_id,
+            "type": item_type,
+            "name": item_name,
+            "status": "pending",
+            "added": time.time()
+        })
+
+    logger.info(f"Added to manual queue: {item_name} ({item_type})")
+    return True, f"Added '{item_name}' to download queue"
+
+
+def get_manual_queue() -> list[dict[str, Any]]:
+    """Get the current manual download queue."""
+    with manual_queue_lock:
+        return list(manual_download_queue)
+
+
+def clear_manual_queue() -> None:
+    """Clear the manual download queue."""
+    with manual_queue_lock:
+        manual_download_queue.clear()
+
+
+def remove_from_manual_queue(item_id: str, item_type: str) -> bool:
+    """Remove an item from the manual download queue."""
+    with manual_queue_lock:
+        for i, item in enumerate(manual_download_queue):
+            if item["id"] == item_id and item["type"] == item_type:
+                manual_download_queue.pop(i)
+                return True
+    return False
+
+
+def download_single_item(item_id: str, item_type: str, item_name: str) -> tuple[bool, str]:
+    """
+    Download a single item by ID.
+
+    Args:
+        item_id: Qobuz item ID
+        item_type: Type of item - 'tracks', 'albums', or 'artists'
+        item_name: Display name for the item
+
+    Returns:
+        Tuple of (success, message)
+    """
+    try:
+        # Ensure Qobuz client is initialized
+        qobuz.get_tokens()
+        qobuz.initialize_client(qobuz_email, qobuz_password, qobuz.app_id, qobuz.secrets)
+
+        is_album = item_type in ["albums", "artists"]
+
+        # Download the item
+        qobuz.download_from_id(item_id, is_album)
+
+        # Add to history
+        add_to_history(item_name, item_type, item_id, success=True)
+
+        # Update stats
+        if item_type == "tracks":
+            update_stats("tracks_downloaded", increment=1)
+        elif item_type == "albums":
+            update_stats("albums_downloaded", increment=1)
+        elif item_type == "artists":
+            update_stats("artists_downloaded", increment=1)
+
+        logger.info(f"Successfully downloaded: {item_name}")
+        return True, f"Successfully downloaded '{item_name}'"
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Failed to download {item_name}: {error_msg}")
+        update_stats("last_error", value=error_msg)
+        add_to_history(item_name, item_type, item_id, success=False)
+
+        if item_type == "tracks":
+            update_stats("tracks_failed", increment=1)
+        elif item_type == "albums":
+            update_stats("albums_failed", increment=1)
+        elif item_type == "artists":
+            update_stats("artists_failed", increment=1)
+
+        return False, f"Failed to download: {error_msg}"
+
+
+def process_manual_queue() -> None:
+    """Process all items in the manual download queue."""
+    if job_running.is_set():
+        logger.info("A job is already running, cannot process manual queue")
+        return
+
+    job_running.set()
+    update_state("current_status", "processing queue")
+
+    try:
+        while True:
+            # Get next item from queue
+            with manual_queue_lock:
+                pending_items = [i for i in manual_download_queue if i["status"] == "pending"]
+                if not pending_items:
+                    break
+
+                current_item = pending_items[0]
+                current_item["status"] = "downloading"
+
+            item_id = current_item["id"]
+            item_type = current_item["type"]
+            item_name = current_item["name"]
+
+            # Update activity
+            update_activity(
+                current_type=item_type,
+                current_name=item_name,
+                progress_current=0,
+                progress_total=1
+            )
+
+            # Check for pause
+            check_pause()
+
+            if shutdown_event.is_set():
+                break
+
+            # Download the item
+            success, message = download_single_item(item_id, item_type, item_name)
+
+            # Update item status and remove from queue
+            with manual_queue_lock:
+                for i, item in enumerate(manual_download_queue):
+                    if item["id"] == item_id and item["type"] == item_type:
+                        manual_download_queue.pop(i)
+                        break
+
+            logger.info(f"Queue item completed: {item_name} - {'Success' if success else 'Failed'}")
+
+    except Exception as e:
+        logger.error(f"Error processing manual queue: {e}", exc_info=True)
+        update_stats("last_error", value=str(e))
+    finally:
+        update_state("current_status", "idle")
+        clear_activity()
+        job_running.clear()
+        pause_event.clear()
+        with state_lock:
+            app_state["is_paused"] = False
+
+
+def start_queue_processing() -> tuple[bool, str]:
+    """Start processing the manual download queue in a background thread."""
+    if job_running.is_set():
+        return False, "A download job is already running"
+
+    with manual_queue_lock:
+        pending = [i for i in manual_download_queue if i["status"] == "pending"]
+        if not pending:
+            return False, "No items in queue to process"
+
+    # Start processing in background
+    threading.Thread(target=process_manual_queue, daemon=True).start()
+    return True, f"Started processing {len(pending)} items"
+
 
 qobuz = QobuzDL(
     directory=music_directory,
@@ -88,36 +688,35 @@ qobuz = QobuzDL(
     folder_format="{artist}/{artist} - {album}",
 )
 
-def get_user_favorites(user: qobuz_cl.User, fav_type):
-    '''
-    Returns all user favorites using pagination
+def get_user_favorites(user: qobuz_cl.User, fav_type: str) -> list[Any]:
+    """
+    Returns all user favorites using pagination.
 
-    Parameters
-    ----------
-    user: dict
-        returned by qobuz.User
-    fav_type: str
-        favorites type: 'tracks', 'albums', 'artists'
-    '''
-    limit = 50
+    Args:
+        user: Qobuz user instance
+        fav_type: Favorites type - 'tracks', 'albums', or 'artists'
+
+    Returns:
+        List of favorite items
+    """
     offset = 0
-    favorites = []
-    
+    favorites: list[Any] = []
+
     try:
         while True:
-            favs = user.favorites_get(fav_type=fav_type, limit=limit, offset=offset)
+            favs = user.favorites_get(fav_type=fav_type, limit=API_PAGINATION_LIMIT, offset=offset)
             if not favs:
                 break
             favorites.extend(favs)
-            offset += limit
+            offset += API_PAGINATION_LIMIT
             logger.debug(f"Retrieved {len(favs)} {fav_type} favorites (total: {len(favorites)})")
     except Exception as e:
         logger.error(f"Error retrieving {fav_type} favorites: {e}")
-    
+
     return favorites
 
-def download_item(args):
-    """Worker function to download a single item"""
+def download_item(args: tuple[QobuzDL, qobuz_cl.User, Any, bool]) -> tuple[bool, Any]:
+    """Worker function to download a single item."""
     qobuz_dl, user, item, is_album = args
     try:
         qobuz_dl.download_from_id(item.id, is_album)
@@ -127,13 +726,98 @@ def download_item(args):
         logger.error(f"Failed to download item ID {item.id}: {e}")
         return (False, item)
 
-def batch_download(qobuz_dl, user, items, is_album=True, max_workers=1, current_batch_size=10):
+
+def download_item_with_retry(
+    args: tuple[QobuzDL, qobuz_cl.User, Any, bool],
+    max_retries: int = DEFAULT_RETRY_ATTEMPTS
+) -> tuple[bool, Any]:
     """
-    Download items in parallel batches with a limited number of workers
-    Optimized for low-power NAS systems
+    Worker function to download a single item with retry logic.
+
+    Args:
+        args: Tuple of (qobuz_dl, user, item, is_album)
+        max_retries: Maximum number of retry attempts
+
+    Returns:
+        Tuple of (success, item)
     """
-    successful_items = []
-    failed_items = []
+    qobuz_dl, user, item, is_album = args
+
+    for attempt in range(max_retries):
+        try:
+            qobuz_dl.download_from_id(item.id, is_album)
+            user.favorites_del(item)
+            return (True, item)
+        except Exception as e:
+            if attempt < max_retries - 1:
+                delay = RETRY_BASE_DELAY_SECONDS ** (attempt + 1)
+                logger.warning(
+                    f"Download failed for item ID {item.id} (attempt {attempt + 1}/{max_retries}): {e}. "
+                    f"Retrying in {delay}s..."
+                )
+                time.sleep(delay)
+            else:
+                logger.error(f"Failed to download item ID {item.id} after {max_retries} attempts: {e}")
+
+    return (False, item)
+
+def get_item_name(item: Any, item_type: str) -> str:
+    """Extract a display name from an item."""
+    try:
+        if item_type == "tracks":
+            artist = getattr(item, 'performer', {})
+            artist_name = artist.get('name', 'Unknown Artist') if isinstance(artist, dict) else str(artist)
+            title = getattr(item, 'title', 'Unknown Track')
+            return f"{artist_name} - {title}"
+        elif item_type == "albums":
+            artist = getattr(item, 'artist', {})
+            artist_name = artist.get('name', 'Unknown Artist') if isinstance(artist, dict) else str(artist)
+            title = getattr(item, 'title', 'Unknown Album')
+            return f"{artist_name} - {title}"
+        elif item_type == "artists":
+            return getattr(item, 'name', 'Unknown Artist')
+        else:
+            return f"Item {getattr(item, 'id', 'Unknown')}"
+    except Exception:
+        return f"Item {getattr(item, 'id', 'Unknown')}"
+
+
+def batch_download(
+    qobuz_dl: QobuzDL,
+    user: qobuz_cl.User,
+    items: list[Any],
+    is_album: bool = True,
+    max_workers: int = 1,
+    current_batch_size: int = 10,
+    item_type: str = "items"
+) -> tuple[list[Any], list[Any]]:
+    """
+    Download items in parallel batches with a limited number of workers.
+    Optimized for low-power NAS systems.
+
+    Args:
+        qobuz_dl: QobuzDL instance for downloading
+        user: Qobuz user instance
+        items: List of items to download
+        is_album: Whether items are albums
+        max_workers: Number of parallel workers
+        current_batch_size: Items per batch
+        item_type: Type of items for activity tracking
+
+    Returns:
+        Tuple of (successful_items, failed_items)
+    """
+    successful_items: list[Any] = []
+    failed_items: list[Any] = []
+    total_items = len(items)
+
+    # Update activity and queue with total count
+    update_activity(current_type=item_type, progress_total=total_items, progress_current=0)
+    update_queue(pending=total_items, processing=0, completed=0, failed=0)
+
+    # Build initial queue items list
+    queue_items = [{"name": get_item_name(item, item_type), "type": item_type, "status": "pending"} for item in items[:50]]
+    update_queue(items=queue_items)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Create a list of tasks with all necessary information
@@ -141,35 +825,81 @@ def batch_download(qobuz_dl, user, items, is_album=True, max_workers=1, current_
 
         # Process items in batches to avoid overwhelming the system
         effective_batch_size = min(current_batch_size, len(items))
+        total_batches = (len(tasks) + effective_batch_size - 1) // effective_batch_size
+        current_batch_num = 0
 
         for i in range(0, len(tasks), effective_batch_size):
+            # Check for pause
+            check_pause()
+
+            # Check for shutdown
+            if shutdown_event.is_set():
+                logger.info("Shutdown requested, stopping batch download")
+                break
+
+            current_batch_num += 1
             batch = tasks[i:i+effective_batch_size]
             logger.info(f"Processing batch of {len(batch)} items ({i+1}-{min(i+effective_batch_size, len(items))} of {len(items)})")
 
-            # Submit all tasks in this batch
-            futures = [executor.submit(download_item, task) for task in batch]
+            # Update batch progress
+            update_activity(batch_current=current_batch_num, batch_total=total_batches)
+
+            # Submit all tasks in this batch (using retry-enabled download)
+            futures_to_items = {executor.submit(download_item_with_retry, task): task[2] for task in batch}
 
             # Process results as they complete
-            for future in futures:
+            for future in futures_to_items:
+                # Check for pause between items
+                check_pause()
+
+                item = futures_to_items[future]
+                item_name = get_item_name(item, item_type)
+                item_id = str(getattr(item, 'id', 'unknown'))
+
+                # Update current item being processed
+                update_activity(current_name=item_name)
+                update_queue(processing=1)
+
                 try:
-                    success, item = future.result(timeout=600)  # 10-minute timeout per item
+                    success, result_item = future.result(timeout=DOWNLOAD_TIMEOUT_SECONDS)
                     if success:
-                        successful_items.append(item)
+                        successful_items.append(result_item)
+                        add_to_history(item_name, item_type, item_id, success=True)
+                        update_queue(
+                            completed=len(successful_items),
+                            pending=total_items - len(successful_items) - len(failed_items)
+                        )
                     else:
-                        failed_items.append(item)
+                        failed_items.append(result_item)
+                        add_to_history(item_name, item_type, item_id, success=False)
+                        update_queue(
+                            failed=len(failed_items),
+                            pending=total_items - len(successful_items) - len(failed_items)
+                        )
                 except Exception as e:
                     logger.error(f"Worker thread exception: {e}")
-                    app_state["stats"]["last_error"] = str(e)
+                    update_stats("last_error", value=str(e))
+                    failed_items.append(item)
+                    add_to_history(item_name, item_type, item_id, success=False)
+                    update_queue(
+                        failed=len(failed_items),
+                        pending=total_items - len(successful_items) - len(failed_items)
+                    )
+
+                # Update progress
+                completed = len(successful_items) + len(failed_items)
+                update_activity(progress_current=completed)
 
             # Delay between batches to let CPU cool down (important for NAS)
             if i + effective_batch_size < len(tasks):
-                time.sleep(3)
+                time.sleep(INTER_BATCH_DELAY_SECONDS)
 
     return successful_items, failed_items
 
-def process_favorites():
+def process_favorites() -> None:
+    """Main function to process and download all user favorites."""
     try:
-        app_state["current_status"] = "initializing"
+        update_state("current_status", "initializing")
 
         # initialize the Qobuz client
         qobuz.get_tokens()
@@ -180,73 +910,84 @@ def process_favorites():
         qobuz_user = qobuz_cl.User(qobuz_email, qobuz_password)
 
         # retrieve favorites
-        app_state["current_status"] = "fetching favorites"
+        update_state("current_status", "fetching favorites")
         logger.info("Fetching favorite items from Qobuz...")
         favorite_tracks = get_user_favorites(qobuz_user, fav_type="tracks")
         favorite_albums = get_user_favorites(qobuz_user, fav_type="albums")
         favorite_artists = get_user_favorites(qobuz_user, fav_type="artists")
 
-        app_state["favorites_count"] = {
-            "tracks": len(favorite_tracks),
-            "albums": len(favorite_albums),
-            "artists": len(favorite_artists)
-        }
+        update_favorites_count(
+            tracks=len(favorite_tracks),
+            albums=len(favorite_albums),
+            artists=len(favorite_artists)
+        )
 
         logger.info(f"Found {len(favorite_tracks)} tracks, {len(favorite_albums)} albums, {len(favorite_artists)} artists")
 
         # download favorites using the optimized batch method with configurable workers
         if favorite_tracks:
-            app_state["current_status"] = "downloading tracks"
+            update_state("current_status", "downloading tracks")
             logger.info("Processing tracks...")
             successful_tracks, failed_tracks = batch_download(
                 qobuz, qobuz_user, favorite_tracks,
                 is_album=False,
                 max_workers=max_workers_tracks,
-                current_batch_size=batch_size
+                current_batch_size=batch_size,
+                item_type="tracks"
             )
-            app_state["stats"]["tracks_downloaded"] += len(successful_tracks)
-            app_state["stats"]["tracks_failed"] += len(failed_tracks)
+            update_stats("tracks_downloaded", increment=len(successful_tracks))
+            update_stats("tracks_failed", increment=len(failed_tracks))
             logger.info(f"Tracks: {len(successful_tracks)} successful, {len(failed_tracks)} failed")
 
         if favorite_albums:
-            app_state["current_status"] = "downloading albums"
+            update_state("current_status", "downloading albums")
             logger.info("Processing albums...")
             successful_albums, failed_albums = batch_download(
                 qobuz, qobuz_user, favorite_albums,
                 is_album=True,
                 max_workers=max_workers_albums,
-                current_batch_size=batch_size
+                current_batch_size=batch_size,
+                item_type="albums"
             )
-            app_state["stats"]["albums_downloaded"] += len(successful_albums)
-            app_state["stats"]["albums_failed"] += len(failed_albums)
+            update_stats("albums_downloaded", increment=len(successful_albums))
+            update_stats("albums_failed", increment=len(failed_albums))
             logger.info(f"Albums: {len(successful_albums)} successful, {len(failed_albums)} failed")
 
         if favorite_artists:
-            app_state["current_status"] = "downloading artists"
+            update_state("current_status", "downloading artists")
             logger.info("Processing artists...")
             successful_artists, failed_artists = batch_download(
                 qobuz, qobuz_user, favorite_artists,
                 is_album=False,
                 max_workers=max_workers_artists,
-                current_batch_size=batch_size
+                current_batch_size=batch_size,
+                item_type="artists"
             )
-            app_state["stats"]["artists_downloaded"] += len(successful_artists)
-            app_state["stats"]["artists_failed"] += len(failed_artists)
+            update_stats("artists_downloaded", increment=len(successful_artists))
+            update_stats("artists_failed", increment=len(failed_artists))
             logger.info(f"Artists: {len(successful_artists)} successful, {len(failed_artists)} failed")
 
-        app_state["current_status"] = "idle"
-        app_state["last_run"] = time.time()
+        update_state("current_status", "idle")
+        update_state("last_run", time.time())
+        clear_activity()
+        clear_queue()
 
     except Exception as e:
         logger.error(f"Process favorites error: {e}", exc_info=True)
-        app_state["stats"]["last_error"] = str(e)
-        app_state["current_status"] = "error"
+        update_stats("last_error", value=str(e))
+        update_state("current_status", "error")
     finally:
-        # Ensure we always clear the running flag
+        # Ensure we always clear the running flag and activity
+        clear_activity()
+        clear_queue()
         job_running.clear()
+        # Clear pause state when job ends
+        pause_event.clear()
+        with state_lock:
+            app_state["is_paused"] = False
 
-def job():
-    """Main job function that runs on schedule"""
+def job() -> None:
+    """Main job function that runs on schedule."""
     if job_running.is_set():
         logger.info("A job is already running. Skipping this execution.")
         return
@@ -254,7 +995,7 @@ def job():
     # Set the running flag first
     job_running.set()
     logger.info("Job started!")
-    
+
     try:
         process_favorites()
     except Exception as e:
@@ -264,8 +1005,40 @@ def job():
         # Clear the running flag no matter what
         job_running.clear()
 
-def run_scheduler():
-    """Run the scheduler in the main thread"""
+
+# Graceful shutdown handling
+shutdown_event = threading.Event()
+
+
+def handle_shutdown(signum: int, frame: Any) -> None:
+    """Handle shutdown signals gracefully."""
+    sig_name = signal.Signals(signum).name
+    logger.info(f"Received {sig_name} signal, initiating graceful shutdown...")
+    shutdown_event.set()
+
+    if job_running.is_set():
+        logger.info("Waiting for current job to complete (max 60s)...")
+        # Wait up to 60 seconds for the current job to finish
+        start_time = time.time()
+        while job_running.is_set() and (time.time() - start_time) < 60:
+            time.sleep(1)
+
+        if job_running.is_set():
+            logger.warning("Job did not complete within timeout, forcing shutdown")
+        else:
+            logger.info("Job completed, shutting down cleanly")
+
+    logger.info("Shutdown complete")
+    sys.exit(0)
+
+
+# Register signal handlers
+signal.signal(signal.SIGTERM, handle_shutdown)
+signal.signal(signal.SIGINT, handle_shutdown)
+
+
+def run_scheduler() -> None:
+    """Run the scheduler in the main thread."""
     logger.info(f"Starting scheduler. First job will run immediately, then every {check_interval_minutes} minutes.")
 
     # Run the job immediately on startup
@@ -275,12 +1048,13 @@ def run_scheduler():
     schedule.every(check_interval_minutes).minutes.do(job)
 
     try:
-        while True:
+        while not shutdown_event.is_set():
             schedule.run_pending()
             # Update next run time for web UI
             jobs = schedule.get_jobs()
             if jobs:
-                app_state["next_run"] = jobs[0].next_run.timestamp() if jobs[0].next_run else None
+                next_run = jobs[0].next_run.timestamp() if jobs[0].next_run else None
+                update_state("next_run", next_run)
             time.sleep(1)
     except KeyboardInterrupt:
         logger.info("Scheduler stopped by user")
@@ -290,9 +1064,35 @@ def run_scheduler():
 if __name__ == "__main__":
     # Start web UI if enabled
     if enable_web_ui:
-        logger.info(f"Starting web UI on port {web_ui_port}")
+        auth_status = "enabled" if (web_ui_username and web_ui_password) else "DISABLED (not recommended)"
+        logger.info(f"Starting web UI on port {web_ui_port} (authentication: {auth_status})")
         from web_ui import create_app
-        web_app = create_app(app_state, job_running, job_function=job)
+
+        # Determine log file path
+        log_file = os.path.join(config_directory, "qobuz-downloader.log") if log_file_max_mb > 0 else None
+
+        web_app = create_app(
+            app_state,
+            job_running,
+            job_function=job,
+            auth_username=web_ui_username,
+            auth_password=web_ui_password,
+            secret_key=web_ui_secret_key,
+            app_settings=app_settings,
+            clear_history_func=clear_history,
+            clear_failed_func=clear_failed_items,
+            clear_stats_func=clear_all_stats,
+            pause_func=toggle_pause,
+            retry_failed_func=retry_failed_items,
+            get_queue_func=get_queue_info,
+            log_file_path=log_file,
+            search_func=search_qobuz,
+            add_to_queue_func=add_to_manual_queue,
+            get_manual_queue_func=get_manual_queue,
+            clear_manual_queue_func=clear_manual_queue,
+            remove_from_queue_func=remove_from_manual_queue,
+            start_queue_func=start_queue_processing
+        )
 
         # Run Flask in a separate thread
         web_thread = threading.Thread(

@@ -4,7 +4,61 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Qobuz Downloader - Dashboard</title>
+    <!-- PWA Support -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Qobuz DL">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
     <style>
+        :root {
+            /* Light theme (default) */
+            --bg-gradient-start: #667eea;
+            --bg-gradient-end: #764ba2;
+            --card-bg: #ffffff;
+            --card-shadow: rgba(0, 0, 0, 0.2);
+            --text-primary: #111827;
+            --text-secondary: #6b7280;
+            --text-heading: #333333;
+            --border-color: #e5e7eb;
+            --input-bg: #f3f4f6;
+            --success-color: #10b981;
+            --error-color: #ef4444;
+            --warning-color: #f59e0b;
+            --info-color: #3b82f6;
+            --tab-bg: rgba(255, 255, 255, 0.2);
+            --tab-hover: rgba(255, 255, 255, 0.3);
+            --tab-active-bg: #ffffff;
+            --tab-active-text: #667eea;
+            --indicator-bg: rgba(255, 255, 255, 0.9);
+            --log-bg: #1e1e1e;
+            --log-text: #d4d4d4;
+        }
+
+        [data-theme="dark"] {
+            --bg-gradient-start: #1a1a2e;
+            --bg-gradient-end: #16213e;
+            --card-bg: #1f2937;
+            --card-shadow: rgba(0, 0, 0, 0.5);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --text-heading: #e5e7eb;
+            --border-color: #374151;
+            --input-bg: #374151;
+            --success-color: #34d399;
+            --error-color: #f87171;
+            --warning-color: #fbbf24;
+            --info-color: #60a5fa;
+            --tab-bg: rgba(255, 255, 255, 0.1);
+            --tab-hover: rgba(255, 255, 255, 0.15);
+            --tab-active-bg: #1f2937;
+            --tab-active-text: #60a5fa;
+            --indicator-bg: #1f2937;
+            --log-bg: #0d1117;
+            --log-text: #c9d1d9;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -13,13 +67,15 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
             min-height: 100vh;
             padding: 20px;
+            padding-bottom: 80px;
+            transition: background 0.3s ease;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
         }
 
@@ -34,6 +90,43 @@
             margin-bottom: 10px;
         }
 
+        /* Tab Navigation */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            padding: 12px 24px;
+            background: var(--tab-bg);
+            border: none;
+            border-radius: 8px 8px 0 0;
+            color: white;
+            font-size: 1em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            background: var(--tab-hover);
+        }
+
+        .tab-btn.active {
+            background: var(--tab-active-bg);
+            color: var(--tab-active-text);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
         .dashboard {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -42,18 +135,70 @@
         }
 
         .card {
-            background: white;
+            background: var(--card-bg);
             border-radius: 12px;
             padding: 24px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 10px 30px var(--card-shadow);
+            transition: background 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card.full-width {
+            grid-column: 1 / -1;
         }
 
         .card h2 {
             font-size: 1.3em;
             margin-bottom: 16px;
-            color: #333;
-            border-bottom: 2px solid #667eea;
+            color: var(--text-heading);
+            border-bottom: 2px solid var(--bg-gradient-start);
             padding-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .card h2 .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .card h2 .clear-btn {
+            font-size: 0.7em;
+            padding: 4px 12px;
+            background: #fee2e2;
+            color: #991b1b;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .card h2 .clear-btn:hover {
+            background: #fecaca;
+        }
+
+        .card h2 .retry-btn {
+            font-size: 0.7em;
+            padding: 4px 12px;
+            background: #dbeafe;
+            color: #1d4ed8;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .card h2 .retry-btn:hover {
+            background: #bfdbfe;
+        }
+
+        .card h2 .retry-btn:disabled {
+            background: #e5e7eb;
+            color: #9ca3af;
+            cursor: not-allowed;
         }
 
         .status-badge {
@@ -66,21 +211,10 @@
             letter-spacing: 0.5px;
         }
 
-        .status-idle {
-            background: #10b981;
-            color: white;
-        }
-
-        .status-running {
-            background: #3b82f6;
-            color: white;
-            animation: pulse 2s infinite;
-        }
-
-        .status-error {
-            background: #ef4444;
-            color: white;
-        }
+        .status-idle { background: var(--success-color); color: white; }
+        .status-running { background: var(--info-color); color: white; animation: pulse 2s infinite; }
+        .status-error { background: var(--error-color); color: white; }
+        .status-paused { background: var(--warning-color); color: white; }
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -91,30 +225,14 @@
             display: flex;
             justify-content: space-between;
             padding: 12px 0;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid var(--border-color);
         }
 
-        .stat-row:last-child {
-            border-bottom: none;
-        }
-
-        .stat-label {
-            color: #6b7280;
-            font-weight: 500;
-        }
-
-        .stat-value {
-            color: #111827;
-            font-weight: 600;
-        }
-
-        .stat-value.success {
-            color: #10b981;
-        }
-
-        .stat-value.error {
-            color: #ef4444;
-        }
+        .stat-row:last-child { border-bottom: none; }
+        .stat-label { color: var(--text-secondary); font-weight: 500; }
+        .stat-value { color: var(--text-primary); font-weight: 600; }
+        .stat-value.success { color: var(--success-color); }
+        .stat-value.error { color: var(--error-color); }
 
         .error-message {
             background: #fee2e2;
@@ -126,6 +244,11 @@
             word-break: break-word;
         }
 
+        [data-theme="dark"] .error-message {
+            background: #450a0a;
+            color: #fca5a5;
+        }
+
         .footer {
             text-align: center;
             color: white;
@@ -133,27 +256,65 @@
             opacity: 0.9;
         }
 
-        .refresh-indicator {
+        .top-bar {
             position: fixed;
             top: 20px;
+            left: 20px;
             right: 20px;
-            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: space-between;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .top-bar > * {
+            pointer-events: auto;
+        }
+
+        .refresh-indicator {
+            background: var(--indicator-bg);
             padding: 10px 16px;
             border-radius: 6px;
             font-size: 0.9em;
-            color: #6b7280;
+            color: var(--text-secondary);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
-        .loading {
-            opacity: 0.6;
+        .top-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .icon-btn {
+            background: var(--indicator-bg);
+            padding: 10px;
+            border-radius: 6px;
+            color: var(--text-secondary);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+        }
+
+        .icon-btn:hover {
+            background: var(--card-bg);
+            color: var(--error-color);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .theme-toggle:hover {
+            color: var(--warning-color);
         }
 
         .trigger-btn {
             width: 100%;
             padding: 12px 24px;
             margin-top: 16px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
             color: white;
             border: none;
             border-radius: 8px;
@@ -164,58 +325,669 @@
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
         }
 
-        .trigger-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+        .trigger-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4); }
+        .trigger-btn:active { transform: translateY(0); }
+        .trigger-btn:disabled { background: #9ca3af; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        .btn-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
         }
 
-        .trigger-btn:active {
-            transform: translateY(0);
+        .btn-row .trigger-btn {
+            margin-top: 0;
+            flex: 1;
         }
 
-        .trigger-btn:disabled {
-            background: #9ca3af;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
+        .pause-btn {
+            background: linear-gradient(135deg, var(--warning-color) 0%, #d97706 100%);
         }
 
         .notification {
             position: fixed;
             top: 80px;
             right: 20px;
-            background: white;
+            background: var(--card-bg);
             padding: 16px 24px;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             z-index: 1000;
             animation: slideIn 0.3s ease;
             max-width: 300px;
+            color: var(--text-primary);
         }
 
-        .notification.success {
-            border-left: 4px solid #10b981;
-        }
-
-        .notification.error {
-            border-left: 4px solid #ef4444;
-        }
+        .notification.success { border-left: 4px solid var(--success-color); }
+        .notification.error { border-left: 4px solid var(--error-color); }
 
         @keyframes slideIn {
-            from {
-                transform: translateX(400px);
-                opacity: 0;
+            from { transform: translateX(400px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            margin-top: 16px;
+        }
+
+        .progress-bar {
+            height: 20px;
+            background: var(--border-color);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .progress-text {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .current-item {
+            background: var(--input-bg);
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-size: 0.9em;
+        }
+
+        .current-item .label {
+            color: var(--text-secondary);
+            font-size: 0.8em;
+            margin-bottom: 4px;
+        }
+
+        .current-item .value {
+            color: var(--text-primary);
+            font-weight: 500;
+            word-break: break-word;
+        }
+
+        /* History List */
+        .history-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 12px;
+        }
+
+        .history-item:last-child { border-bottom: none; }
+
+        .history-item .info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .history-item .name {
+            font-weight: 500;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .history-item .meta {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+        }
+
+        .history-item .type-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .type-badge.tracks { background: #dbeafe; color: #1d4ed8; }
+        .type-badge.albums { background: #dcfce7; color: #166534; }
+        .type-badge.artists { background: #fef3c7; color: #92400e; }
+        .type-badge.failed { background: #fee2e2; color: #991b1b; }
+
+        [data-theme="dark"] .type-badge.tracks { background: #1e3a5f; color: #93c5fd; }
+        [data-theme="dark"] .type-badge.albums { background: #14532d; color: #86efac; }
+        [data-theme="dark"] .type-badge.artists { background: #451a03; color: #fcd34d; }
+        [data-theme="dark"] .type-badge.failed { background: #450a0a; color: #fca5a5; }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state svg {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Settings */
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+        }
+
+        .setting-item {
+            background: var(--input-bg);
+            padding: 16px;
+            border-radius: 8px;
+        }
+
+        .setting-item .label {
+            font-size: 0.85em;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .setting-item .value {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Log Viewer */
+        .log-viewer {
+            background: var(--log-bg);
+            color: var(--log-text);
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.85em;
+            padding: 16px;
+            border-radius: 8px;
+            max-height: 600px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.5;
+        }
+
+        .log-controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .log-controls select,
+        .log-controls input {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.9em;
+        }
+
+        .log-controls button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: var(--info-color);
+            color: white;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .log-controls button:hover {
+            opacity: 0.9;
+        }
+
+        .log-line {
+            padding: 2px 0;
+        }
+
+        .log-line.error { color: #f87171; }
+        .log-line.warning { color: #fbbf24; }
+        .log-line.info { color: #60a5fa; }
+        .log-line.debug { color: #9ca3af; }
+
+        /* Queue */
+        .queue-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .queue-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 12px;
+        }
+
+        .queue-item:last-child { border-bottom: none; }
+
+        .queue-item .position {
+            width: 30px;
+            height: 30px;
+            background: var(--input-bg);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 0.9em;
+        }
+
+        .queue-item .info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .queue-item .name {
+            font-weight: 500;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .queue-item .status {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+        }
+
+        .queue-item.active {
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .queue-stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .queue-stat {
+            text-align: center;
+        }
+
+        .queue-stat .number {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .queue-stat .label {
+            font-size: 0.85em;
+            color: var(--text-secondary);
+        }
+
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+                padding-top: 70px;
+                padding-bottom: 80px;
             }
-            to {
-                transform: translateX(0);
-                opacity: 1;
+
+            .header h1 {
+                font-size: 1.8em;
             }
+
+            .tabs {
+                gap: 4px;
+            }
+
+            .tab-btn {
+                padding: 10px 16px;
+                font-size: 0.9em;
+            }
+
+            .card {
+                padding: 16px;
+            }
+
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+
+            .top-bar {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+            }
+
+            .card h2 {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .card h2 .btn-group {
+                width: 100%;
+            }
+
+            .card h2 .btn-group button {
+                flex: 1;
+            }
+        }
+
+        /* Install prompt for PWA */
+        .install-prompt {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px var(--card-shadow);
+            display: none;
+            align-items: center;
+            gap: 16px;
+            z-index: 1000;
+        }
+
+        .install-prompt.show {
+            display: flex;
+        }
+
+        .install-prompt .message {
+            flex: 1;
+            color: var(--text-primary);
+        }
+
+        .install-prompt .message strong {
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .install-prompt .message span {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+        }
+
+        .install-prompt button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .install-prompt .install-btn {
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            color: white;
+        }
+
+        .install-prompt .dismiss-btn {
+            background: var(--input-bg);
+            color: var(--text-secondary);
+        }
+
+        /* Search */
+        .search-form {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .search-form input[type="text"] {
+            flex: 1;
+            min-width: 200px;
+            padding: 12px 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 1em;
+        }
+
+        .search-form input[type="text"]:focus {
+            outline: none;
+            border-color: var(--info-color);
+        }
+
+        .search-form select {
+            padding: 12px 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 1em;
+        }
+
+        .search-form button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .search-form button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .search-results {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        .search-result-item {
+            display: flex;
+            gap: 12px;
+            padding: 16px;
+            background: var(--input-bg);
+            border-radius: 8px;
+            transition: transform 0.2s ease;
+        }
+
+        .search-result-item:hover {
+            transform: translateY(-2px);
+        }
+
+        .search-result-item .album-art {
+            width: 80px;
+            height: 80px;
+            border-radius: 6px;
+            background: var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+
+        .search-result-item .album-art img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .search-result-item .album-art svg {
+            width: 32px;
+            height: 32px;
+            opacity: 0.5;
+        }
+
+        .search-result-item .details {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .search-result-item .title {
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+
+        .search-result-item .artist {
+            color: var(--text-secondary);
+            font-size: 0.9em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 8px;
+        }
+
+        .search-result-item .meta-info {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+
+        .search-result-item .meta-badge {
+            font-size: 0.75em;
+            padding: 2px 6px;
+            background: var(--card-bg);
+            border-radius: 4px;
+            color: var(--text-secondary);
+        }
+
+        .search-result-item .add-btn {
+            padding: 8px 16px;
+            background: var(--success-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85em;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .search-result-item .add-btn:hover {
+            opacity: 0.9;
+        }
+
+        .search-result-item .add-btn:disabled {
+            background: var(--border-color);
+            color: var(--text-secondary);
+            cursor: not-allowed;
+        }
+
+        .search-result-item .add-btn.added {
+            background: var(--info-color);
+        }
+
+        .download-queue-section {
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 2px solid var(--border-color);
+        }
+
+        .download-queue-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .download-queue-header h3 {
+            color: var(--text-heading);
+            font-size: 1.1em;
+        }
+
+        .download-queue-header .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .manual-queue-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .manual-queue-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 12px;
+        }
+
+        .manual-queue-item:last-child {
+            border-bottom: none;
+        }
+
+        .manual-queue-item .info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .manual-queue-item .name {
+            font-weight: 500;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .manual-queue-item .remove-btn {
+            padding: 4px 8px;
+            background: var(--error-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
         }
     </style>
 </head>
 <body>
-    <div class="refresh-indicator" id="refreshIndicator">
-        Auto-refresh: <span id="countdown">5</span>s
+    <div class="top-bar">
+        <div class="top-controls">
+            <a href="/logout" class="icon-btn" title="Sign Out">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+            </a>
+            <button class="icon-btn theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">
+                <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="refresh-indicator" id="refreshIndicator">
+            Auto-refresh: <span id="countdown">5</span>s
+        </div>
     </div>
 
     <div class="container">
@@ -224,75 +996,260 @@
             <p>Automatic favorites downloader dashboard</p>
         </div>
 
-        <div class="dashboard">
-            <div class="card">
-                <h2>Current Status</h2>
-                <div class="stat-row">
-                    <span class="stat-label">Status</span>
-                    <span class="stat-value">
-                        <span id="statusBadge" class="status-badge status-idle">IDLE</span>
-                    </span>
-                </div>
-                <div class="stat-row">
-                    <span class="stat-label">Last Run</span>
-                    <span class="stat-value" id="lastRun">Never</span>
-                </div>
-                <div class="stat-row">
-                    <span class="stat-label">Next Run</span>
-                    <span class="stat-value" id="nextRun">Calculating...</span>
-                </div>
-                <button id="triggerBtn" class="trigger-btn" onclick="triggerDownload()">
-                    Download Now
-                </button>
-            </div>
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showTab('overview')">Overview</button>
+            <button class="tab-btn" onclick="showTab('search')">Search</button>
+            <button class="tab-btn" onclick="showTab('queue')">Queue</button>
+            <button class="tab-btn" onclick="showTab('history')">History</button>
+            <button class="tab-btn" onclick="showTab('failed')">Failed</button>
+            <button class="tab-btn" onclick="showTab('logs')">Logs</button>
+            <button class="tab-btn" onclick="showTab('settings')">Settings</button>
+        </div>
 
-            <div class="card">
-                <h2>Pending Favorites</h2>
-                <div class="stat-row">
-                    <span class="stat-label">Tracks</span>
-                    <span class="stat-value" id="favTracks">0</span>
+        <!-- Overview Tab -->
+        <div id="overview" class="tab-content active">
+            <div class="dashboard">
+                <div class="card">
+                    <h2>Current Status</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Status</span>
+                        <span class="stat-value">
+                            <span id="statusBadge" class="status-badge status-idle">IDLE</span>
+                        </span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Last Run</span>
+                        <span class="stat-value" id="lastRun">Never</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Next Run</span>
+                        <span class="stat-value" id="nextRun">Calculating...</span>
+                    </div>
+                    <div class="btn-row">
+                        <button id="triggerBtn" class="trigger-btn" onclick="triggerDownload()">
+                            Download Now
+                        </button>
+                        <button id="pauseBtn" class="trigger-btn pause-btn" onclick="togglePause()" style="display: none;">
+                            Pause
+                        </button>
+                    </div>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Albums</span>
-                    <span class="stat-value" id="favAlbums">0</span>
+
+                <div class="card">
+                    <h2>Current Activity</h2>
+                    <div id="activityContent">
+                        <div class="empty-state">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            <p>No active downloads</p>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Artists</span>
-                    <span class="stat-value" id="favArtists">0</span>
+
+                <div class="card">
+                    <h2>Pending Favorites</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Tracks</span>
+                        <span class="stat-value" id="favTracks">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Albums</span>
+                        <span class="stat-value" id="favAlbums">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Artists</span>
+                        <span class="stat-value" id="favArtists">0</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>
+                        Download Statistics
+                        <button class="clear-btn" onclick="clearStats()">Clear</button>
+                    </h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Tracks Downloaded</span>
+                        <span class="stat-value success" id="tracksDownloaded">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Albums Downloaded</span>
+                        <span class="stat-value success" id="albumsDownloaded">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Artists Downloaded</span>
+                        <span class="stat-value success" id="artistsDownloaded">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Total Failures</span>
+                        <span class="stat-value error" id="totalFailed">0</span>
+                    </div>
+                    <div id="errorContainer"></div>
                 </div>
             </div>
+        </div>
 
-            <div class="card">
-                <h2>Download Statistics</h2>
-                <div class="stat-row">
-                    <span class="stat-label">Tracks Downloaded</span>
-                    <span class="stat-value success" id="tracksDownloaded">0</span>
+        <!-- Search Tab -->
+        <div id="search" class="tab-content">
+            <div class="card full-width">
+                <h2>Search Qobuz</h2>
+                <form class="search-form" onsubmit="performSearch(event)">
+                    <input type="text" id="searchQuery" placeholder="Search for albums, tracks, or artists..." required>
+                    <select id="searchType">
+                        <option value="albums">Albums</option>
+                        <option value="tracks">Tracks</option>
+                        <option value="artists">Artists</option>
+                    </select>
+                    <button type="submit" id="searchBtn">Search</button>
+                </form>
+                <div id="searchResults" class="search-results">
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <p>Search for music to download</p>
+                    </div>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Albums Downloaded</span>
-                    <span class="stat-value success" id="albumsDownloaded">0</span>
-                </div>
-                <div class="stat-row">
-                    <span class="stat-label">Artists Downloaded</span>
-                    <span class="stat-value success" id="artistsDownloaded">0</span>
+
+                <!-- Manual Download Queue -->
+                <div class="download-queue-section">
+                    <div class="download-queue-header">
+                        <h3>Download Queue (<span id="manualQueueCount">0</span> items)</h3>
+                        <div class="btn-group">
+                            <button class="retry-btn" onclick="startManualQueue()" id="startQueueBtn">Start Downloads</button>
+                            <button class="clear-btn" onclick="clearManualQueue()">Clear Queue</button>
+                        </div>
+                    </div>
+                    <div id="manualQueueList" class="manual-queue-list">
+                        <div class="empty-state">
+                            <p>Add items from search results to queue them for download</p>
+                        </div>
+                    </div>
                 </div>
             </div>
+        </div>
 
-            <div class="card">
-                <h2>Failures</h2>
-                <div class="stat-row">
-                    <span class="stat-label">Track Failures</span>
-                    <span class="stat-value error" id="tracksFailed">0</span>
+        <!-- Queue Tab -->
+        <div id="queue" class="tab-content">
+            <div class="card full-width">
+                <h2>
+                    Download Queue
+                    <div class="btn-group">
+                        <button id="queuePauseBtn" class="retry-btn" onclick="togglePause()">Pause Queue</button>
+                    </div>
+                </h2>
+                <div class="queue-stats">
+                    <div class="queue-stat">
+                        <div class="number" id="queuePending">0</div>
+                        <div class="label">Pending</div>
+                    </div>
+                    <div class="queue-stat">
+                        <div class="number" id="queueProcessing">0</div>
+                        <div class="label">Processing</div>
+                    </div>
+                    <div class="queue-stat">
+                        <div class="number" id="queueCompleted">0</div>
+                        <div class="label">Completed</div>
+                    </div>
+                    <div class="queue-stat">
+                        <div class="number" id="queueFailed">0</div>
+                        <div class="label">Failed</div>
+                    </div>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Album Failures</span>
-                    <span class="stat-value error" id="albumsFailed">0</span>
+                <div id="queueList" class="queue-list">
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="8" y1="6" x2="21" y2="6"></line>
+                            <line x1="8" y1="12" x2="21" y2="12"></line>
+                            <line x1="8" y1="18" x2="21" y2="18"></line>
+                            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                        </svg>
+                        <p>Queue is empty</p>
+                    </div>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Artist Failures</span>
-                    <span class="stat-value error" id="artistsFailed">0</span>
+            </div>
+        </div>
+
+        <!-- History Tab -->
+        <div id="history" class="tab-content">
+            <div class="card full-width">
+                <h2>
+                    Download History
+                    <button class="clear-btn" onclick="clearHistory()">Clear History</button>
+                </h2>
+                <div id="historyList" class="history-list">
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <p>No download history yet</p>
+                    </div>
                 </div>
-                <div id="errorContainer"></div>
+            </div>
+        </div>
+
+        <!-- Failed Items Tab -->
+        <div id="failed" class="tab-content">
+            <div class="card full-width">
+                <h2>
+                    Failed Downloads
+                    <div class="btn-group">
+                        <button id="retryAllBtn" class="retry-btn" onclick="retryFailed()">Retry All</button>
+                        <button class="clear-btn" onclick="clearFailed()">Clear Failed</button>
+                    </div>
+                </h2>
+                <div id="failedList" class="history-list">
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                        </svg>
+                        <p>No failed downloads</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Tab -->
+        <div id="logs" class="tab-content">
+            <div class="card full-width">
+                <h2>Application Logs</h2>
+                <div class="log-controls">
+                    <select id="logLevel" onchange="loadLogs()">
+                        <option value="all">All Levels</option>
+                        <option value="error">Errors Only</option>
+                        <option value="warning">Warnings & Above</option>
+                        <option value="info" selected>Info & Above</option>
+                        <option value="debug">Debug (All)</option>
+                    </select>
+                    <input type="number" id="logLines" value="100" min="10" max="1000" title="Number of lines">
+                    <button onclick="loadLogs()">Refresh</button>
+                    <button onclick="downloadLogs()">Download</button>
+                    <label style="display: flex; align-items: center; gap: 4px; color: var(--text-secondary);">
+                        <input type="checkbox" id="autoScrollLogs" checked> Auto-scroll
+                    </label>
+                </div>
+                <div id="logViewer" class="log-viewer">
+                    Loading logs...
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="settings" class="tab-content">
+            <div class="card full-width">
+                <h2>Application Settings</h2>
+                <div id="settingsContent" class="settings-grid">
+                    <div class="empty-state">
+                        <p>Loading settings...</p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -301,61 +1258,600 @@
         </div>
     </div>
 
+    <!-- PWA Install Prompt -->
+    <div class="install-prompt" id="installPrompt">
+        <div class="message">
+            <strong>Install Qobuz Downloader</strong>
+            <span>Add to your home screen for quick access</span>
+        </div>
+        <button class="install-btn" onclick="installPWA()">Install</button>
+        <button class="dismiss-btn" onclick="dismissInstall()">Not now</button>
+    </div>
+
     <script>
         let countdown = 5;
         let countdownInterval;
+        let currentTab = 'overview';
+        let deferredPrompt = null;
+        let isPaused = false;
+
+        // Theme handling
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeIcon(savedTheme);
+        }
+
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const newTheme = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        }
+
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('themeIcon');
+            if (theme === 'dark') {
+                icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
+            } else {
+                icon.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
+            }
+        }
+
+        // Tab navigation
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+            currentTab = tabName;
+
+            if (tabName === 'history') loadHistory();
+            if (tabName === 'failed') loadFailed();
+            if (tabName === 'settings') loadSettings();
+            if (tabName === 'logs') loadLogs();
+            if (tabName === 'queue') loadQueue();
+            if (tabName === 'search') loadManualQueue();
+        }
+
+        // Search functionality
+        let addedToQueue = new Set();
+
+        function performSearch(event) {
+            event.preventDefault();
+            const query = document.getElementById('searchQuery').value.trim();
+            const type = document.getElementById('searchType').value;
+            const btn = document.getElementById('searchBtn');
+
+            if (!query) return;
+
+            btn.disabled = true;
+            btn.textContent = 'Searching...';
+
+            fetch(`/api/search?q=${encodeURIComponent(query)}&type=${type}&limit=20`)
+                .then(response => response.json())
+                .then(data => {
+                    btn.disabled = false;
+                    btn.textContent = 'Search';
+
+                    if (!data.success) {
+                        showNotification(data.error || 'Search failed', false);
+                        return;
+                    }
+
+                    displaySearchResults(data.results, type);
+                })
+                .catch(error => {
+                    console.error('Search error:', error);
+                    btn.disabled = false;
+                    btn.textContent = 'Search';
+                    showNotification('Search failed', false);
+                });
+        }
+
+        function displaySearchResults(results, type) {
+            const container = document.getElementById('searchResults');
+
+            if (!results || results.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <p>No results found</p>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = results.map(item => {
+                const queueKey = `${item.id}-${item.type}`;
+                const isAdded = addedToQueue.has(queueKey);
+
+                let metaInfo = '';
+                if (type === 'albums') {
+                    metaInfo = `
+                        ${item.year ? `<span class="meta-badge">${item.year}</span>` : ''}
+                        ${item.tracks_count ? `<span class="meta-badge">${item.tracks_count} tracks</span>` : ''}
+                        ${item.quality ? `<span class="meta-badge">${item.quality}bit/${item.sample_rate}kHz</span>` : ''}
+                    `;
+                } else if (type === 'tracks') {
+                    const duration = item.duration ? formatDuration(item.duration) : '';
+                    metaInfo = `
+                        ${item.album ? `<span class="meta-badge">${escapeHtml(item.album)}</span>` : ''}
+                        ${duration ? `<span class="meta-badge">${duration}</span>` : ''}
+                    `;
+                } else if (type === 'artists') {
+                    metaInfo = `
+                        ${item.albums_count ? `<span class="meta-badge">${item.albums_count} albums</span>` : ''}
+                    `;
+                }
+
+                return `
+                    <div class="search-result-item">
+                        <div class="album-art">
+                            ${item.image ? `<img src="${item.image}" alt="Cover" onerror="this.style.display='none'">` : ''}
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                        </div>
+                        <div class="details">
+                            <div class="title">${escapeHtml(item.title || item.name)}</div>
+                            <div class="artist">${escapeHtml(item.artist || '')}</div>
+                            <div class="meta-info">${metaInfo}</div>
+                            <button class="add-btn ${isAdded ? 'added' : ''}"
+                                    onclick="addToQueue('${item.id}', '${item.type}', '${escapeHtml(item.name).replace(/'/g, "\\'")}')"
+                                    ${isAdded ? 'disabled' : ''}>
+                                ${isAdded ? 'Added' : 'Add to Queue'}
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function addToQueue(id, type, name) {
+            fetch('/api/download/queue', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, type, name })
+            })
+            .then(response => response.json())
+            .then(data => {
+                showNotification(data.message, data.success);
+                if (data.success) {
+                    addedToQueue.add(`${id}-${type}`);
+                    // Update button state
+                    const buttons = document.querySelectorAll('.add-btn');
+                    buttons.forEach(btn => {
+                        if (btn.onclick.toString().includes(`'${id}'`) && btn.onclick.toString().includes(`'${type}'`)) {
+                            btn.classList.add('added');
+                            btn.textContent = 'Added';
+                            btn.disabled = true;
+                        }
+                    });
+                    loadManualQueue();
+                }
+            })
+            .catch(error => {
+                console.error('Error adding to queue:', error);
+                showNotification('Failed to add to queue', false);
+            });
+        }
+
+        function loadManualQueue() {
+            fetch('/api/download/queue')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('manualQueueList');
+                    const countEl = document.getElementById('manualQueueCount');
+                    const startBtn = document.getElementById('startQueueBtn');
+
+                    countEl.textContent = data.length;
+                    startBtn.disabled = data.length === 0;
+
+                    if (!data || data.length === 0) {
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <p>Add items from search results to queue them for download</p>
+                            </div>`;
+                        return;
+                    }
+
+                    container.innerHTML = data.map(item => `
+                        <div class="manual-queue-item">
+                            <div class="info">
+                                <div class="name">${escapeHtml(item.name)}</div>
+                            </div>
+                            <span class="type-badge ${item.type}">${item.type}</span>
+                            <button class="remove-btn" onclick="removeFromQueue('${item.id}', '${item.type}')">Remove</button>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => console.error('Error loading manual queue:', error));
+        }
+
+        function removeFromQueue(id, type) {
+            fetch('/api/download/queue/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, type })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    addedToQueue.delete(`${id}-${type}`);
+                    loadManualQueue();
+                    showNotification(data.message, true);
+                }
+            })
+            .catch(error => console.error('Error removing from queue:', error));
+        }
+
+        function startManualQueue() {
+            const btn = document.getElementById('startQueueBtn');
+            btn.disabled = true;
+            btn.textContent = 'Starting...';
+
+            fetch('/api/download/queue/start', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    btn.textContent = 'Start Downloads';
+                    if (data.success) {
+                        updateStatus();
+                    } else {
+                        btn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error starting queue:', error);
+                    showNotification('Failed to start downloads', false);
+                    btn.disabled = false;
+                    btn.textContent = 'Start Downloads';
+                });
+        }
+
+        function clearManualQueue() {
+            if (!confirm('Clear all items from download queue?')) return;
+
+            fetch('/api/download/queue/clear', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    if (data.success) {
+                        addedToQueue.clear();
+                        loadManualQueue();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error clearing queue:', error);
+                    showNotification('Failed to clear queue', false);
+                });
+        }
 
         function updateStatus() {
             fetch('/api/status')
                 .then(response => response.json())
                 .then(data => {
-                    // Update status badge
                     const statusBadge = document.getElementById('statusBadge');
-                    statusBadge.textContent = data.is_running ?
-                        data.current_status.toUpperCase() : 'IDLE';
+                    isPaused = data.is_paused || false;
 
-                    statusBadge.className = 'status-badge';
-                    if (data.is_running) {
-                        statusBadge.classList.add('status-running');
+                    if (isPaused) {
+                        statusBadge.textContent = 'PAUSED';
+                        statusBadge.className = 'status-badge status-paused';
+                    } else if (data.is_running) {
+                        statusBadge.textContent = data.current_status.toUpperCase();
+                        statusBadge.className = 'status-badge status-running';
                     } else if (data.current_status === 'error') {
-                        statusBadge.classList.add('status-error');
+                        statusBadge.textContent = 'ERROR';
+                        statusBadge.className = 'status-badge status-error';
                     } else {
-                        statusBadge.classList.add('status-idle');
+                        statusBadge.textContent = 'IDLE';
+                        statusBadge.className = 'status-badge status-idle';
                     }
 
-                    // Update button state
                     const triggerBtn = document.getElementById('triggerBtn');
+                    const pauseBtn = document.getElementById('pauseBtn');
+                    const queuePauseBtn = document.getElementById('queuePauseBtn');
+
                     triggerBtn.disabled = data.is_running;
                     triggerBtn.textContent = data.is_running ? 'Running...' : 'Download Now';
 
-                    // Update timestamps
+                    if (data.is_running) {
+                        pauseBtn.style.display = 'block';
+                        pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+                    } else {
+                        pauseBtn.style.display = 'none';
+                    }
+
+                    if (queuePauseBtn) {
+                        queuePauseBtn.textContent = isPaused ? 'Resume Queue' : 'Pause Queue';
+                        queuePauseBtn.disabled = !data.is_running;
+                    }
+
                     document.getElementById('lastRun').textContent = data.last_run;
                     document.getElementById('nextRun').textContent = data.next_run;
 
-                    // Update favorites count
                     document.getElementById('favTracks').textContent = data.favorites_count.tracks;
                     document.getElementById('favAlbums').textContent = data.favorites_count.albums;
                     document.getElementById('favArtists').textContent = data.favorites_count.artists;
 
-                    // Update stats
                     document.getElementById('tracksDownloaded').textContent = data.stats.tracks_downloaded;
                     document.getElementById('albumsDownloaded').textContent = data.stats.albums_downloaded;
                     document.getElementById('artistsDownloaded').textContent = data.stats.artists_downloaded;
-                    document.getElementById('tracksFailed').textContent = data.stats.tracks_failed;
-                    document.getElementById('albumsFailed').textContent = data.stats.albums_failed;
-                    document.getElementById('artistsFailed').textContent = data.stats.artists_failed;
+                    const totalFailed = data.stats.tracks_failed + data.stats.albums_failed + data.stats.artists_failed;
+                    document.getElementById('totalFailed').textContent = totalFailed;
 
-                    // Update error message
                     const errorContainer = document.getElementById('errorContainer');
+                    errorContainer.innerHTML = '';
                     if (data.stats.last_error) {
-                        errorContainer.innerHTML = `<div class="error-message">Last Error: ${data.stats.last_error}</div>`;
-                    } else {
-                        errorContainer.innerHTML = '';
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'error-message';
+                        errorDiv.textContent = 'Last Error: ' + data.stats.last_error;
+                        errorContainer.appendChild(errorDiv);
+                    }
+
+                    updateActivity(data.activity, data.is_running);
+
+                    // Update queue stats if available
+                    if (data.queue) {
+                        document.getElementById('queuePending').textContent = data.queue.pending || 0;
+                        document.getElementById('queueProcessing').textContent = data.queue.processing || 0;
+                        document.getElementById('queueCompleted').textContent = data.queue.completed || 0;
+                        document.getElementById('queueFailed').textContent = data.queue.failed || 0;
+                    }
+                })
+                .catch(error => console.error('Error fetching status:', error));
+        }
+
+        function updateActivity(activity, isRunning) {
+            const container = document.getElementById('activityContent');
+            if (!isRunning || !activity || !activity.current_type) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        <p>No active downloads</p>
+                    </div>`;
+                return;
+            }
+
+            const progress = activity.progress || {current: 0, total: 0};
+            const batch = activity.batch_progress || {current: 0, total: 0};
+            const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+
+            container.innerHTML = `
+                <div class="stat-row">
+                    <span class="stat-label">Downloading</span>
+                    <span class="stat-value"><span class="type-badge ${activity.current_type}">${activity.current_type}</span></span>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${percent}%">${percent}%</div>
+                    </div>
+                    <div class="progress-text">${progress.current} of ${progress.total} items (Batch ${batch.current}/${batch.total})</div>
+                </div>
+                ${activity.current_name ? `
+                <div class="current-item">
+                    <div class="label">Current Item</div>
+                    <div class="value">${escapeHtml(activity.current_name)}</div>
+                </div>` : ''}`;
+        }
+
+        function loadHistory() {
+            fetch('/api/history')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('historyList');
+                    if (!data || data.length === 0) {
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <p>No download history yet</p>
+                            </div>`;
+                        return;
+                    }
+                    container.innerHTML = data.map(item => `
+                        <div class="history-item">
+                            <div class="info">
+                                <div class="name">${escapeHtml(item.name)}</div>
+                                <div class="meta">${item.timestamp_formatted}</div>
+                            </div>
+                            <span class="type-badge ${item.type}">${item.type}</span>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => console.error('Error loading history:', error));
+        }
+
+        function loadFailed() {
+            fetch('/api/failed')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('failedList');
+                    const retryBtn = document.getElementById('retryAllBtn');
+
+                    if (!data || data.length === 0) {
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                                </svg>
+                                <p>No failed downloads</p>
+                            </div>`;
+                        retryBtn.disabled = true;
+                        return;
+                    }
+
+                    retryBtn.disabled = false;
+                    container.innerHTML = data.map(item => `
+                        <div class="history-item">
+                            <div class="info">
+                                <div class="name">${escapeHtml(item.name)}</div>
+                                <div class="meta">${item.timestamp_formatted} - ${escapeHtml(item.error || 'Unknown error')}</div>
+                            </div>
+                            <span class="type-badge failed">${item.type}</span>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => console.error('Error loading failed items:', error));
+        }
+
+        function loadSettings() {
+            fetch('/api/settings')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('settingsContent');
+                    if (!data || Object.keys(data).length === 0) {
+                        container.innerHTML = '<div class="empty-state"><p>No settings available</p></div>';
+                        return;
+                    }
+                    const qualityMap = {5: 'MP3 320kbps', 6: 'FLAC 16-bit', 7: 'FLAC 24-bit/96kHz', 27: 'FLAC 24-bit/192kHz'};
+                    container.innerHTML = `
+                        <div class="setting-item">
+                            <div class="label">Audio Quality</div>
+                            <div class="value">${qualityMap[data.quality] || data.quality}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Check Interval</div>
+                            <div class="value">${data.check_interval_minutes} minutes</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Track Workers</div>
+                            <div class="value">${data.max_workers_tracks}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Album Workers</div>
+                            <div class="value">${data.max_workers_albums}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Artist Workers</div>
+                            <div class="value">${data.max_workers_artists}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Batch Size</div>
+                            <div class="value">${data.batch_size}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Music Directory</div>
+                            <div class="value">${escapeHtml(data.music_directory)}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Config Directory</div>
+                            <div class="value">${escapeHtml(data.config_directory)}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Web UI Port</div>
+                            <div class="value">${data.web_ui_port}</div>
+                        </div>
+                        <div class="setting-item">
+                            <div class="label">Authentication</div>
+                            <div class="value">${data.auth_enabled ? 'Enabled' : 'Disabled'}</div>
+                        </div>
+                    `;
+                })
+                .catch(error => console.error('Error loading settings:', error));
+        }
+
+        function loadLogs() {
+            const level = document.getElementById('logLevel').value;
+            const lines = document.getElementById('logLines').value;
+
+            fetch(`/api/logs?level=${level}&lines=${lines}`)
+                .then(response => response.json())
+                .then(data => {
+                    const viewer = document.getElementById('logViewer');
+                    if (!data.logs || data.logs.length === 0) {
+                        viewer.innerHTML = '<span class="log-line">No logs available</span>';
+                        return;
+                    }
+
+                    viewer.innerHTML = data.logs.map(line => {
+                        let levelClass = '';
+                        if (line.includes(' - ERROR - ')) levelClass = 'error';
+                        else if (line.includes(' - WARNING - ')) levelClass = 'warning';
+                        else if (line.includes(' - INFO - ')) levelClass = 'info';
+                        else if (line.includes(' - DEBUG - ')) levelClass = 'debug';
+                        return `<div class="log-line ${levelClass}">${escapeHtml(line)}</div>`;
+                    }).join('');
+
+                    // Auto-scroll to bottom
+                    if (document.getElementById('autoScrollLogs').checked) {
+                        viewer.scrollTop = viewer.scrollHeight;
                     }
                 })
                 .catch(error => {
-                    console.error('Error fetching status:', error);
+                    document.getElementById('logViewer').innerHTML = '<span class="log-line error">Error loading logs</span>';
+                    console.error('Error loading logs:', error);
                 });
+        }
+
+        function downloadLogs() {
+            window.location.href = '/api/logs/download';
+        }
+
+        function loadQueue() {
+            fetch('/api/queue')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('queueList');
+
+                    // Update stats
+                    document.getElementById('queuePending').textContent = data.stats?.pending || 0;
+                    document.getElementById('queueProcessing').textContent = data.stats?.processing || 0;
+                    document.getElementById('queueCompleted').textContent = data.stats?.completed || 0;
+                    document.getElementById('queueFailed').textContent = data.stats?.failed || 0;
+
+                    if (!data.items || data.items.length === 0) {
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                                </svg>
+                                <p>Queue is empty</p>
+                            </div>`;
+                        return;
+                    }
+
+                    container.innerHTML = data.items.map((item, index) => `
+                        <div class="queue-item ${item.status === 'processing' ? 'active' : ''}">
+                            <div class="position">${index + 1}</div>
+                            <div class="info">
+                                <div class="name">${escapeHtml(item.name)}</div>
+                                <div class="status">${item.type} - ${item.status}</div>
+                            </div>
+                            <span class="type-badge ${item.type}">${item.type}</span>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => console.error('Error loading queue:', error));
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         function showNotification(message, isSuccess) {
@@ -363,10 +1859,7 @@
             notification.className = `notification ${isSuccess ? 'success' : 'error'}`;
             notification.textContent = message;
             document.body.appendChild(notification);
-
-            setTimeout(() => {
-                notification.remove();
-            }, 5000);
+            setTimeout(() => notification.remove(), 5000);
         }
 
         function triggerDownload() {
@@ -374,30 +1867,97 @@
             btn.disabled = true;
             btn.textContent = 'Starting...';
 
-            fetch('/api/trigger', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                showNotification(data.message, data.success);
-                if (data.success) {
-                    // Force immediate status update
-                    setTimeout(updateStatus, 500);
-                    resetCountdown();
-                } else {
+            fetch('/api/trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    if (data.success) {
+                        setTimeout(updateStatus, 500);
+                        resetCountdown();
+                    } else {
+                        btn.disabled = false;
+                        btn.textContent = 'Download Now';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error triggering download:', error);
+                    showNotification('Failed to trigger download', false);
                     btn.disabled = false;
                     btn.textContent = 'Download Now';
-                }
-            })
-            .catch(error => {
-                console.error('Error triggering download:', error);
-                showNotification('Failed to trigger download', false);
-                btn.disabled = false;
-                btn.textContent = 'Download Now';
-            });
+                });
+        }
+
+        function togglePause() {
+            fetch('/api/pause', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    if (data.success) {
+                        updateStatus();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error toggling pause:', error);
+                    showNotification('Failed to toggle pause', false);
+                });
+        }
+
+        function retryFailed() {
+            const btn = document.getElementById('retryAllBtn');
+            btn.disabled = true;
+            btn.textContent = 'Retrying...';
+
+            fetch('/api/retry-failed', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    btn.textContent = 'Retry All';
+                    if (data.success) {
+                        loadFailed();
+                        updateStatus();
+                    } else {
+                        btn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error retrying failed:', error);
+                    showNotification('Failed to retry items', false);
+                    btn.disabled = false;
+                    btn.textContent = 'Retry All';
+                });
+        }
+
+        function clearHistory() {
+            if (!confirm('Clear all download history?')) return;
+            fetch('/api/clear/history', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    if (data.success) loadHistory();
+                })
+                .catch(error => showNotification('Failed to clear history', false));
+        }
+
+        function clearFailed() {
+            if (!confirm('Clear all failed items?')) return;
+            fetch('/api/clear/failed', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    if (data.success) loadFailed();
+                })
+                .catch(error => showNotification('Failed to clear failed items', false));
+        }
+
+        function clearStats() {
+            if (!confirm('Clear all download statistics?')) return;
+            fetch('/api/clear/stats', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.message, data.success);
+                    if (data.success) updateStatus();
+                })
+                .catch(error => showNotification('Failed to clear statistics', false));
         }
 
         function resetCountdown() {
@@ -409,7 +1969,6 @@
             countdownInterval = setInterval(() => {
                 countdown--;
                 document.getElementById('countdown').textContent = countdown;
-
                 if (countdown <= 0) {
                     updateStatus();
                     resetCountdown();
@@ -417,7 +1976,44 @@
             }, 1000);
         }
 
-        // Initial update
+        // PWA Install handling
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            // Show install prompt after a delay
+            setTimeout(() => {
+                if (!localStorage.getItem('pwa-install-dismissed')) {
+                    document.getElementById('installPrompt').classList.add('show');
+                }
+            }, 5000);
+        });
+
+        function installPWA() {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then((choiceResult) => {
+                if (choiceResult.outcome === 'accepted') {
+                    showNotification('App installed successfully!', true);
+                }
+                deferredPrompt = null;
+                document.getElementById('installPrompt').classList.remove('show');
+            });
+        }
+
+        function dismissInstall() {
+            document.getElementById('installPrompt').classList.remove('show');
+            localStorage.setItem('pwa-install-dismissed', 'true');
+        }
+
+        // Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(reg => console.log('Service Worker registered'))
+                .catch(err => console.log('Service Worker registration failed:', err));
+        }
+
+        // Initial load
+        initTheme();
         updateStatus();
         startCountdown();
     </script>

@@ -7,9 +7,14 @@ Docker Hub Link: https://hub.docker.com/r/rgallione/qobuz-downloader
 ## Features
 - Automatic downloading of favorited tracks, albums, and artists
 - Web UI dashboard for monitoring status and statistics
+- **Secure authentication** for remote access
 - Optimized for low-power NAS systems (4-core CPUs with arr stack)
+- **Multi-architecture support** (amd64, arm64, arm/v7) for various NAS devices
 - Multi-stage Docker build for minimal image size
 - Configurable resource usage and check intervals
+- **Automatic retry** with exponential backoff for failed downloads
+- **Graceful shutdown** handling for clean container stops
+- **Persistent statistics** that survive restarts
 - Health checks for container monitoring
 
 ## Configuration
@@ -17,7 +22,7 @@ Docker Hub Link: https://hub.docker.com/r/rgallione/qobuz-downloader
 ### Directory Linking
 The app uses two main directories:
 - `/downloads`: The location of music downloaded
-- `/config`: The location of the database
+- `/config`: The location of the database, logs, and statistics
 
 You will need to mount a host directory to these locations in Docker.
 
@@ -32,6 +37,19 @@ QOBUZ_PASSWORD=your-password
 - `QOBUZ_EMAIL`: Your Qobuz email address
 - `QOBUZ_PASSWORD`: Your Qobuz password
 
+#### Authentication Variables (Recommended for Remote Access)
+```
+WEB_UI_USERNAME=admin
+WEB_UI_PASSWORD=your-secure-password
+WEB_UI_SECRET_KEY=your-secret-key  # Optional, auto-generated if not set
+```
+
+- `WEB_UI_USERNAME`: Username for web UI login
+- `WEB_UI_PASSWORD`: Password for web UI login
+- `WEB_UI_SECRET_KEY`: Secret key for session encryption (optional - auto-generated if not set)
+
+> **Security Note:** If you plan to expose the web UI publicly or access it remotely, you should **always** set `WEB_UI_USERNAME` and `WEB_UI_PASSWORD`. Without these, the dashboard is accessible without authentication.
+
 #### Optional Variables
 ```
 QUALITY=27
@@ -42,9 +60,16 @@ MAX_WORKERS_ARTISTS=1
 BATCH_SIZE=10
 ENABLE_WEB_UI=true
 WEB_UI_PORT=5000
+LOG_LEVEL=INFO
+LOG_FILE_MAX_MB=10
+LOG_FILE_BACKUP_COUNT=3
 ```
 
 - `QUALITY`: Audio quality (default: 27 for highest available)
+  - `5`: MP3 320kbps
+  - `6`: FLAC 16-bit/44.1kHz
+  - `7`: FLAC 24-bit up to 96kHz
+  - `27`: FLAC 24-bit up to 192kHz (highest quality)
 - `CHECK_INTERVAL_MINUTES`: How often to check for new favorites (default: 30)
 - `MAX_WORKERS_TRACKS`: Parallel downloads for tracks (default: 1, recommended for low-power NAS)
 - `MAX_WORKERS_ALBUMS`: Parallel downloads for albums (default: 1, recommended for low-power NAS)
@@ -61,19 +86,74 @@ WEB_UI_PORT=5000
 The web UI provides a real-time dashboard showing:
 - Current download status with visual indicators
 - **Manual trigger button** to download immediately (no need to wait for schedule)
+- **Search & Download** - Search Qobuz for albums, tracks, and artists and queue them for download
+- **Pause/Resume** - Pause active downloads and resume when ready
+- **Download queue** - View pending, processing, and completed items
+- **Download history** - Track all successful downloads
+- **Failed items** with retry functionality
+- **Log viewer** - View and filter application logs in real-time
+- **Dark mode** - Toggle between light and dark themes
 - Pending favorites count (tracks, albums, artists)
 - Download statistics (successful/failed)
 - Last run and next scheduled run times
 - Error messages with details
 - Auto-refresh every 5 seconds
+- **Mobile PWA** - Install as app on mobile devices
 
 Access the web UI at `http://your-nas-ip:5000` (or your configured port).
 
+### Authentication
+
+When `WEB_UI_USERNAME` and `WEB_UI_PASSWORD` are configured:
+- A login page is displayed before accessing the dashboard
+- Sessions expire after 24 hours of inactivity
+- Brute-force protection: 5 failed attempts results in a 5-minute lockout
+- Rate limiting prevents rapid login attempts
+- Logout button available in the dashboard
+
 ### Manual Downloads
-Click the "Download Now" button in the web UI to immediately trigger a download job. The button will be disabled while a job is running.
+Click the "Download Now" button in the web UI to immediately trigger a download job. The button will be disabled while a job is running. Rate limiting prevents accidental rapid triggers.
+
+### Search & Download
+Use the "Search" tab to find and download specific content from Qobuz:
+1. Enter a search query and select the type (Albums, Tracks, or Artists)
+2. Browse results with album art, quality info, and track counts
+3. Click "Add to Queue" to queue items for download
+4. Review your download queue at the bottom of the Search tab
+5. Click "Start Downloads" to process the queue
+6. Items are downloaded with the same quality settings as favorites
+
+### Download Queue & Pause/Resume
+- View the download queue in the "Queue" tab to see pending, processing, and completed items
+- Use the "Pause" button to temporarily pause downloads - useful when you need system resources
+- Resume downloads at any time - the job continues where it left off
+
+### Failed Downloads & Retry
+- Failed downloads are tracked in the "Failed" tab with error messages
+- Click "Retry All" to re-queue all failed items for another download attempt
+- Clear failed items when they're no longer needed
+
+### Log Viewer
+- View application logs in real-time in the "Logs" tab
+- Filter by log level (Debug, Info, Warning, Error)
+- Download the full log file for troubleshooting
+- Auto-scroll option to follow new log entries
+
+### Dark Mode
+- Toggle dark mode using the sun/moon icon in the top-left corner
+- Theme preference is saved and persists across sessions
+- Both dashboard and login page support dark mode
+
+### Mobile App (PWA)
+The web UI can be installed as a Progressive Web App on mobile devices:
+1. Open the dashboard in your mobile browser
+2. When prompted, tap "Install" or use the browser's "Add to Home Screen" option
+3. Access the app directly from your home screen with an app-like experience
+4. Works offline for viewing cached data
 
 ## Docker Compose Example
 
+### Basic Setup (Local Network Only)
 ```yaml
 version: '3.8'
 
@@ -86,8 +166,6 @@ services:
       - QOBUZ_PASSWORD=your-password
       - QUALITY=27
       - CHECK_INTERVAL_MINUTES=30
-      - MAX_WORKERS_TRACKS=1
-      - MAX_WORKERS_ALBUMS=1
       - ENABLE_WEB_UI=true
       - WEB_UI_PORT=5000
     volumes:
@@ -96,13 +174,54 @@ services:
     ports:
       - "5000:5000"
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health').read()"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 ```
+
+### Secure Setup (Remote Access)
+```yaml
+version: '3.8'
+
+services:
+  qobuz-downloader:
+    image: rgallione/qobuz-downloader:latest
+    container_name: qobuz-downloader
+    environment:
+      - QOBUZ_EMAIL=your-email@example.com
+      - QOBUZ_PASSWORD=your-password
+      - QUALITY=27
+      - CHECK_INTERVAL_MINUTES=30
+      - ENABLE_WEB_UI=true
+      - WEB_UI_PORT=5000
+      # Authentication for remote access
+      - WEB_UI_USERNAME=admin
+      - WEB_UI_PASSWORD=your-secure-password-here
+    volumes:
+      - /path/to/music:/downloads
+      - /path/to/config:/config
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+```
+
+## Reliability Features
+
+### Automatic Retry
+Failed downloads are automatically retried up to 3 times with exponential backoff:
+- 1st retry: 2 second delay
+- 2nd retry: 4 second delay
+- 3rd retry: 8 second delay
+
+This handles temporary network issues and API rate limits gracefully.
+
+### Graceful Shutdown
+When the container receives a stop signal (SIGTERM/SIGINT):
+1. The application waits for any running download job to complete (up to 60 seconds)
+2. Statistics are saved to disk
+3. Clean shutdown occurs
+
+This prevents interrupted downloads and data corruption.
+
+### Persistent Statistics
+Download statistics are saved to `/config/stats.json` and persist across container restarts. You won't lose your download counts when updating the container.
 
 ## Performance Tuning for Low-Power NAS
 
@@ -116,6 +235,15 @@ This application is optimized for 4-core CPUs running alongside arr stack applic
 
 If you have more CPU headroom, you can increase `MAX_WORKERS_*` values to 2-3 for faster downloads.
 
+## Multi-Architecture Support
+
+The Docker image supports multiple architectures:
+- `linux/amd64` - Standard x86_64 servers and NAS devices
+- `linux/arm64` - ARM-based NAS (Synology DS923+, QNAP ARM models, etc.)
+- `linux/arm/v7` - Older ARM devices (Raspberry Pi 3/4, etc.)
+
+The correct architecture is automatically selected when pulling the image.
+
 ## Logging
 
 Logs are stored in the `/config` directory as `qobuz-downloader.log` with automatic rotation:
@@ -128,10 +256,19 @@ Logs are stored in the `/config` directory as `qobuz-downloader.log` with automa
 ## Getting Started
 
 1. Copy `.env.example` to `.env` and fill in your Qobuz credentials
-2. Update directory paths in `docker-compose.yml` to match your system
-3. Run `docker-compose up -d`
-4. Access the web UI at `http://your-nas-ip:5000`
-5. The first download will start immediately, then repeat every 30 minutes (or your configured interval)
+2. **For remote access:** Set `WEB_UI_USERNAME` and `WEB_UI_PASSWORD`
+3. Update directory paths in `docker-compose.yml` to match your system
+4. Run `docker-compose up -d`
+5. Access the web UI at `http://your-nas-ip:5000`
+6. The first download will start immediately, then repeat every 30 minutes (or your configured interval)
+
+## Security Recommendations
+
+If exposing the web UI to the internet:
+1. **Always enable authentication** with strong credentials
+2. Use a reverse proxy (nginx, Traefik, Caddy) with HTTPS
+3. Consider using a VPN instead of direct exposure
+4. Keep the container updated for security patches
 
 ## Questions
 Reach out to @jeremywade1337 on Telegram if you have any questions

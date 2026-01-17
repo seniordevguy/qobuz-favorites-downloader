@@ -1,27 +1,234 @@
-from flask import Flask, render_template, jsonify, request
-import time
-from datetime import datetime
+import hashlib
+import hmac
+import os
+import secrets
 import threading
+import time
+from collections import deque
+from datetime import datetime, timedelta
+from functools import wraps
+from typing import Any, Callable
 
-def create_app(app_state, job_running, job_function=None):
-    """Create and configure the Flask app"""
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for, send_file, Response
+
+
+# Rate limiting configuration
+TRIGGER_COOLDOWN_SECONDS = 5
+LOGIN_RATE_LIMIT_SECONDS = 2
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_LOCKOUT_SECONDS = 300  # 5 minutes
+
+last_trigger_time: float = 0
+trigger_lock = threading.Lock()
+
+# Login attempt tracking
+login_attempts: dict[str, list[float]] = {}
+login_attempts_lock = threading.Lock()
+
+
+def constant_time_compare(a: str, b: str) -> bool:
+    """Compare two strings in constant time to prevent timing attacks."""
+    return hmac.compare_digest(a.encode('utf-8'), b.encode('utf-8'))
+
+
+def check_login_rate_limit(ip: str) -> tuple[bool, str]:
+    """
+    Check if an IP is rate limited for login attempts.
+
+    Returns:
+        Tuple of (is_allowed, error_message)
+    """
+    with login_attempts_lock:
+        now = time.time()
+
+        if ip not in login_attempts:
+            login_attempts[ip] = []
+
+        # Clean old attempts (older than lockout period)
+        login_attempts[ip] = [t for t in login_attempts[ip] if now - t < LOGIN_LOCKOUT_SECONDS]
+
+        # Check if locked out
+        if len(login_attempts[ip]) >= MAX_LOGIN_ATTEMPTS:
+            oldest = min(login_attempts[ip])
+            remaining = int(LOGIN_LOCKOUT_SECONDS - (now - oldest))
+            return False, f"Too many failed attempts. Try again in {remaining}s"
+
+        # Check rate limit (minimum time between attempts)
+        if login_attempts[ip] and now - login_attempts[ip][-1] < LOGIN_RATE_LIMIT_SECONDS:
+            return False, "Please wait before trying again"
+
+        return True, ""
+
+
+def record_failed_login(ip: str) -> None:
+    """Record a failed login attempt for rate limiting."""
+    with login_attempts_lock:
+        if ip not in login_attempts:
+            login_attempts[ip] = []
+        login_attempts[ip].append(time.time())
+
+
+def clear_login_attempts(ip: str) -> None:
+    """Clear login attempts after successful login."""
+    with login_attempts_lock:
+        if ip in login_attempts:
+            del login_attempts[ip]
+
+
+def create_app(
+    app_state: dict[str, Any],
+    job_running: threading.Event,
+    job_function: Callable[[], None] | None = None,
+    auth_username: str | None = None,
+    auth_password: str | None = None,
+    secret_key: str | None = None,
+    app_settings: dict[str, Any] | None = None,
+    clear_history_func: Callable[[], None] | None = None,
+    clear_failed_func: Callable[[], None] | None = None,
+    clear_stats_func: Callable[[], None] | None = None,
+    pause_func: Callable[[], bool] | None = None,
+    retry_failed_func: Callable[[], tuple[bool, str]] | None = None,
+    get_queue_func: Callable[[], dict[str, Any]] | None = None,
+    log_file_path: str | None = None,
+    search_func: Callable[[str, str, int], dict[str, Any]] | None = None,
+    add_to_queue_func: Callable[[str, str, str], tuple[bool, str]] | None = None,
+    get_manual_queue_func: Callable[[], list[dict[str, Any]]] | None = None,
+    clear_manual_queue_func: Callable[[], None] | None = None,
+    remove_from_queue_func: Callable[[str, str], bool] | None = None,
+    start_queue_func: Callable[[], tuple[bool, str]] | None = None
+) -> Flask:
+    """
+    Create and configure the Flask app with authentication.
+
+    Args:
+        app_state: Shared application state dictionary
+        job_running: Event indicating if a job is running
+        job_function: Optional function to trigger downloads
+        auth_username: Username for web UI authentication
+        auth_password: Password for web UI authentication
+        secret_key: Secret key for session encryption
+        app_settings: Application settings for display
+        clear_history_func: Function to clear download history
+        clear_failed_func: Function to clear failed items
+        clear_stats_func: Function to clear all statistics
+        pause_func: Function to toggle pause state
+        retry_failed_func: Function to retry failed downloads
+        get_queue_func: Function to get download queue
+        log_file_path: Path to the log file
+        search_func: Function to search Qobuz
+        add_to_queue_func: Function to add item to download queue
+        get_manual_queue_func: Function to get manual download queue
+        clear_manual_queue_func: Function to clear manual queue
+        remove_from_queue_func: Function to remove item from queue
+        start_queue_func: Function to start processing download queue
+
+    Returns:
+        Configured Flask application
+    """
     app = Flask(__name__)
 
+    # Configure session
+    app.secret_key = secret_key or secrets.token_hex(32)
+    app.config.update(
+        SESSION_COOKIE_SECURE=False,  # Set to True if using HTTPS
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=24)
+    )
+
+    # Determine if auth is enabled
+    auth_enabled = bool(auth_username and auth_password)
+
+    def login_required(f: Callable) -> Callable:
+        """Decorator to require authentication for a route."""
+        @wraps(f)
+        def decorated_function(*args: Any, **kwargs: Any) -> Any:
+            if not auth_enabled:
+                return f(*args, **kwargs)
+
+            if not session.get('authenticated'):
+                if request.is_json or request.path.startswith('/api/'):
+                    return jsonify({"error": "Authentication required"}), 401
+                return redirect(url_for('login'))
+
+            # Check session expiry
+            last_activity = session.get('last_activity')
+            if last_activity:
+                last_activity_time = datetime.fromisoformat(last_activity)
+                if datetime.now() - last_activity_time > timedelta(hours=24):
+                    session.clear()
+                    if request.is_json or request.path.startswith('/api/'):
+                        return jsonify({"error": "Session expired"}), 401
+                    return redirect(url_for('login'))
+
+            # Update last activity
+            session['last_activity'] = datetime.now().isoformat()
+            return f(*args, **kwargs)
+        return decorated_function
+
+    @app.route('/login', methods=['GET', 'POST'])
+    def login() -> Any:
+        """Login page and authentication handler."""
+        if not auth_enabled:
+            return redirect(url_for('index'))
+
+        if session.get('authenticated'):
+            return redirect(url_for('index'))
+
+        error = None
+
+        if request.method == 'POST':
+            ip = request.remote_addr or 'unknown'
+
+            # Check rate limit
+            allowed, rate_error = check_login_rate_limit(ip)
+            if not allowed:
+                error = rate_error
+            else:
+                username = request.form.get('username', '')
+                password = request.form.get('password', '')
+
+                # Constant-time comparison to prevent timing attacks
+                username_valid = constant_time_compare(username, auth_username or '')
+                password_valid = constant_time_compare(password, auth_password or '')
+
+                if username_valid and password_valid:
+                    clear_login_attempts(ip)
+                    session.permanent = True
+                    session['authenticated'] = True
+                    session['last_activity'] = datetime.now().isoformat()
+                    session['username'] = username
+                    return redirect(url_for('index'))
+                else:
+                    record_failed_login(ip)
+                    error = "Invalid username or password"
+
+        return render_template('login.html', error=error)
+
+    @app.route('/logout')
+    def logout() -> Any:
+        """Log out and clear session."""
+        session.clear()
+        return redirect(url_for('login'))
+
     @app.route('/')
-    def index():
-        """Main dashboard page"""
+    @login_required
+    def index() -> str:
+        """Main dashboard page."""
         return render_template('index.html')
 
     @app.route('/health')
-    def health():
-        """Health check endpoint for Docker"""
+    def health() -> tuple[Any, int]:
+        """Health check endpoint for Docker (no auth required)."""
         return jsonify({"status": "healthy"}), 200
 
     @app.route('/api/status')
-    def get_status():
-        """Get current application status"""
+    @login_required
+    def get_status() -> Any:
+        """Get current application status."""
         status = {
             "is_running": job_running.is_set(),
+            "is_paused": app_state.get("is_paused", False),
             "current_status": app_state["current_status"],
             "last_run": format_timestamp(app_state["last_run"]),
             "last_run_timestamp": app_state["last_run"],
@@ -29,29 +236,117 @@ def create_app(app_state, job_running, job_function=None):
             "next_run_timestamp": app_state["next_run"],
             "stats": app_state["stats"],
             "favorites_count": app_state["favorites_count"],
-            "current_item": app_state["current_item"]
+            "current_item": app_state["current_item"],
+            "activity": app_state.get("activity", {}),
+            "queue": app_state.get("queue", {})
         }
         return jsonify(status)
 
     @app.route('/api/stats')
-    def get_stats():
-        """Get download statistics"""
+    @login_required
+    def get_stats() -> Any:
+        """Get download statistics."""
         return jsonify(app_state["stats"])
 
-    @app.route('/api/trigger', methods=['POST'])
-    def trigger_job():
-        """Manually trigger a download job"""
-        if job_running.is_set():
-            return jsonify({
-                "success": False,
-                "message": "A job is already running"
-            }), 409
+    @app.route('/api/history')
+    @login_required
+    def get_history() -> Any:
+        """Get download history."""
+        history = app_state.get("history", [])
+        # Format timestamps for display
+        formatted = []
+        for item in history:
+            formatted.append({
+                **item,
+                "timestamp_formatted": format_timestamp(item.get("timestamp"))
+            })
+        return jsonify(formatted)
 
-        if job_function is None:
-            return jsonify({
-                "success": False,
-                "message": "Job function not available"
-            }), 500
+    @app.route('/api/failed')
+    @login_required
+    def get_failed() -> Any:
+        """Get failed downloads list."""
+        failed = app_state.get("failed_items", [])
+        # Format timestamps for display
+        formatted = []
+        for item in failed:
+            formatted.append({
+                **item,
+                "timestamp_formatted": format_timestamp(item.get("timestamp"))
+            })
+        return jsonify(formatted)
+
+    @app.route('/api/activity')
+    @login_required
+    def get_activity() -> Any:
+        """Get current download activity."""
+        return jsonify(app_state.get("activity", {}))
+
+    @app.route('/api/settings')
+    @login_required
+    def get_settings() -> Any:
+        """Get application settings (read-only)."""
+        if app_settings:
+            return jsonify(app_settings)
+        return jsonify({})
+
+    @app.route('/api/clear/history', methods=['POST'])
+    @login_required
+    def clear_history() -> tuple[Any, int]:
+        """Clear download history."""
+        if clear_history_func:
+            clear_history_func()
+            return jsonify({"success": True, "message": "History cleared"}), 200
+        return jsonify({"success": False, "message": "Operation not available"}), 500
+
+    @app.route('/api/clear/failed', methods=['POST'])
+    @login_required
+    def clear_failed() -> tuple[Any, int]:
+        """Clear failed items list."""
+        if clear_failed_func:
+            clear_failed_func()
+            return jsonify({"success": True, "message": "Failed items cleared"}), 200
+        return jsonify({"success": False, "message": "Operation not available"}), 500
+
+    @app.route('/api/clear/stats', methods=['POST'])
+    @login_required
+    def clear_stats() -> tuple[Any, int]:
+        """Clear all statistics."""
+        if clear_stats_func:
+            clear_stats_func()
+            return jsonify({"success": True, "message": "Statistics cleared"}), 200
+        return jsonify({"success": False, "message": "Operation not available"}), 500
+
+    @app.route('/api/trigger', methods=['POST'])
+    @login_required
+    def trigger_job() -> tuple[Any, int]:
+        """Manually trigger a download job with rate limiting."""
+        global last_trigger_time
+
+        # Rate limiting check
+        with trigger_lock:
+            current_time = time.time()
+            if current_time - last_trigger_time < TRIGGER_COOLDOWN_SECONDS:
+                remaining = TRIGGER_COOLDOWN_SECONDS - (current_time - last_trigger_time)
+                return jsonify({
+                    "success": False,
+                    "message": f"Please wait {remaining:.1f}s before triggering again"
+                }), 429
+
+            if job_running.is_set():
+                return jsonify({
+                    "success": False,
+                    "message": "A job is already running"
+                }), 409
+
+            if job_function is None:
+                return jsonify({
+                    "success": False,
+                    "message": "Job function not available"
+                }), 500
+
+            # Update last trigger time
+            last_trigger_time = current_time
 
         # Start the job in a separate thread
         threading.Thread(target=job_function, daemon=True).start()
@@ -61,13 +356,298 @@ def create_app(app_state, job_running, job_function=None):
             "message": "Download job triggered successfully"
         }), 200
 
-    def format_timestamp(ts):
-        """Convert timestamp to readable format"""
+    @app.route('/api/pause', methods=['POST'])
+    @login_required
+    def toggle_pause() -> tuple[Any, int]:
+        """Toggle pause state for downloads."""
+        if pause_func is None:
+            return jsonify({
+                "success": False,
+                "message": "Pause function not available"
+            }), 500
+
+        is_paused = pause_func()
+        return jsonify({
+            "success": True,
+            "message": "Downloads paused" if is_paused else "Downloads resumed"
+        }), 200
+
+    @app.route('/api/retry-failed', methods=['POST'])
+    @login_required
+    def retry_failed() -> tuple[Any, int]:
+        """Retry all failed downloads."""
+        if retry_failed_func is None:
+            return jsonify({
+                "success": False,
+                "message": "Retry function not available"
+            }), 500
+
+        success, message = retry_failed_func()
+        return jsonify({
+            "success": success,
+            "message": message
+        }), 200 if success else 400
+
+    @app.route('/api/queue')
+    @login_required
+    def get_queue() -> Any:
+        """Get download queue information."""
+        if get_queue_func:
+            return jsonify(get_queue_func())
+        return jsonify({
+            "items": [],
+            "stats": {"pending": 0, "processing": 0, "completed": 0, "failed": 0}
+        })
+
+    @app.route('/api/logs')
+    @login_required
+    def get_logs() -> Any:
+        """Get application logs with filtering."""
+        level = request.args.get('level', 'info')
+        lines = min(int(request.args.get('lines', 100)), 1000)
+
+        if not log_file_path or not os.path.exists(log_file_path):
+            return jsonify({"logs": [], "error": "Log file not found"})
+
+        try:
+            with open(log_file_path, 'r', encoding='utf-8', errors='replace') as f:
+                all_lines = f.readlines()
+
+            # Filter by level
+            level_priority = {
+                'debug': 0,
+                'info': 1,
+                'warning': 2,
+                'error': 3,
+                'all': -1
+            }
+
+            min_level = level_priority.get(level.lower(), 1)
+            filtered_lines = []
+
+            for line in all_lines:
+                if min_level == -1:  # 'all' - include everything
+                    filtered_lines.append(line.rstrip())
+                elif ' - DEBUG - ' in line and min_level <= 0:
+                    filtered_lines.append(line.rstrip())
+                elif ' - INFO - ' in line and min_level <= 1:
+                    filtered_lines.append(line.rstrip())
+                elif ' - WARNING - ' in line and min_level <= 2:
+                    filtered_lines.append(line.rstrip())
+                elif ' - ERROR - ' in line and min_level <= 3:
+                    filtered_lines.append(line.rstrip())
+                elif ' - CRITICAL - ' in line:
+                    filtered_lines.append(line.rstrip())
+
+            # Return last N lines
+            return jsonify({"logs": filtered_lines[-lines:]})
+        except IOError as e:
+            return jsonify({"logs": [], "error": str(e)})
+
+    @app.route('/api/logs/download')
+    @login_required
+    def download_logs() -> Any:
+        """Download the full log file."""
+        if not log_file_path or not os.path.exists(log_file_path):
+            return jsonify({"error": "Log file not found"}), 404
+
+        return send_file(
+            log_file_path,
+            mimetype='text/plain',
+            as_attachment=True,
+            download_name='qobuz-downloader.log'
+        )
+
+    @app.route('/manifest.json')
+    def manifest() -> Any:
+        """PWA manifest file."""
+        return jsonify({
+            "name": "Qobuz Downloader",
+            "short_name": "Qobuz DL",
+            "description": "Automatic Qobuz favorites downloader",
+            "start_url": "/",
+            "display": "standalone",
+            "background_color": "#667eea",
+            "theme_color": "#667eea",
+            "orientation": "portrait-primary",
+            "icons": [
+                {
+                    "src": "/static/icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png",
+                    "purpose": "any maskable"
+                },
+                {
+                    "src": "/static/icon-512.png",
+                    "sizes": "512x512",
+                    "type": "image/png",
+                    "purpose": "any maskable"
+                }
+            ]
+        })
+
+    @app.route('/static/icon-192.png')
+    @app.route('/static/icon-512.png')
+    def pwa_icon() -> Response:
+        """Generate a simple PWA icon."""
+        # Create a simple colored square as placeholder icon
+        # This creates a minimal 1x1 PNG with the theme color
+        size = 512 if '512' in request.path else 192
+        # Simple SVG that browsers can use
+        svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}">
+            <rect width="{size}" height="{size}" fill="#667eea"/>
+            <text x="50%" y="50%" font-family="Arial, sans-serif" font-size="{size//4}" font-weight="bold"
+                  fill="white" text-anchor="middle" dominant-baseline="central">Q</text>
+        </svg>'''
+        return Response(svg, mimetype='image/svg+xml')
+
+    @app.route('/sw.js')
+    def service_worker() -> Response:
+        """Service worker for PWA."""
+        sw_content = '''
+const CACHE_NAME = 'qobuz-dl-v1';
+const urlsToCache = [
+    '/',
+    '/static/icon-192.png',
+    '/static/icon-512.png'
+];
+
+self.addEventListener('install', event => {
+    event.waitUntil(
+        caches.open(CACHE_NAME)
+            .then(cache => cache.addAll(urlsToCache))
+    );
+});
+
+self.addEventListener('fetch', event => {
+    // Network-first strategy for API calls
+    if (event.request.url.includes('/api/')) {
+        event.respondWith(
+            fetch(event.request)
+                .catch(() => caches.match(event.request))
+        );
+        return;
+    }
+
+    // Cache-first strategy for static assets
+    event.respondWith(
+        caches.match(event.request)
+            .then(response => response || fetch(event.request))
+    );
+});
+
+self.addEventListener('activate', event => {
+    event.waitUntil(
+        caches.keys().then(cacheNames => {
+            return Promise.all(
+                cacheNames.filter(name => name !== CACHE_NAME)
+                    .map(name => caches.delete(name))
+            );
+        })
+    );
+});
+'''
+        return Response(sw_content, mimetype='application/javascript')
+
+    # Search and Download endpoints
+    @app.route('/api/search')
+    @login_required
+    def search() -> Any:
+        """Search Qobuz for tracks, albums, or artists."""
+        if search_func is None:
+            return jsonify({"success": False, "error": "Search not available"}), 500
+
+        query = request.args.get('q', '').strip()
+        search_type = request.args.get('type', 'albums')
+        limit = min(int(request.args.get('limit', 20)), 50)
+
+        if not query:
+            return jsonify({"success": False, "error": "Query is required"}), 400
+
+        if search_type not in ['tracks', 'albums', 'artists']:
+            return jsonify({"success": False, "error": "Invalid search type"}), 400
+
+        results = search_func(query, search_type, limit)
+        return jsonify(results)
+
+    @app.route('/api/download/queue', methods=['POST'])
+    @login_required
+    def add_to_download_queue() -> tuple[Any, int]:
+        """Add an item to the download queue."""
+        if add_to_queue_func is None:
+            return jsonify({"success": False, "message": "Download queue not available"}), 500
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "No data provided"}), 400
+
+        item_id = str(data.get('id', ''))
+        item_type = data.get('type', '')
+        item_name = data.get('name', '')
+
+        if not item_id or not item_type:
+            return jsonify({"success": False, "message": "Missing id or type"}), 400
+
+        success, message = add_to_queue_func(item_id, item_type, item_name)
+        return jsonify({"success": success, "message": message}), 200 if success else 400
+
+    @app.route('/api/download/queue', methods=['GET'])
+    @login_required
+    def get_download_queue() -> Any:
+        """Get the current download queue."""
+        if get_manual_queue_func is None:
+            return jsonify([])
+        return jsonify(get_manual_queue_func())
+
+    @app.route('/api/download/queue/start', methods=['POST'])
+    @login_required
+    def start_download_queue() -> tuple[Any, int]:
+        """Start processing the download queue."""
+        if start_queue_func is None:
+            return jsonify({"success": False, "message": "Queue processing not available"}), 500
+
+        success, message = start_queue_func()
+        return jsonify({"success": success, "message": message}), 200 if success else 400
+
+    @app.route('/api/download/queue/clear', methods=['POST'])
+    @login_required
+    def clear_download_queue() -> tuple[Any, int]:
+        """Clear the download queue."""
+        if clear_manual_queue_func is None:
+            return jsonify({"success": False, "message": "Operation not available"}), 500
+
+        clear_manual_queue_func()
+        return jsonify({"success": True, "message": "Download queue cleared"}), 200
+
+    @app.route('/api/download/queue/remove', methods=['POST'])
+    @login_required
+    def remove_from_download_queue() -> tuple[Any, int]:
+        """Remove an item from the download queue."""
+        if remove_from_queue_func is None:
+            return jsonify({"success": False, "message": "Operation not available"}), 500
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "No data provided"}), 400
+
+        item_id = str(data.get('id', ''))
+        item_type = data.get('type', '')
+
+        if not item_id or not item_type:
+            return jsonify({"success": False, "message": "Missing id or type"}), 400
+
+        success = remove_from_queue_func(item_id, item_type)
+        if success:
+            return jsonify({"success": True, "message": "Item removed from queue"}), 200
+        return jsonify({"success": False, "message": "Item not found in queue"}), 404
+
+    def format_timestamp(ts: float | None) -> str:
+        """Convert timestamp to readable format."""
         if ts is None:
             return "Never"
         try:
             return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
-        except:
+        except (TypeError, ValueError, OSError):
             return "Unknown"
 
     return app
