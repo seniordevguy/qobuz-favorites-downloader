@@ -606,11 +606,11 @@ def download_single_item(item_id: str, item_type: str, item_name: str) -> tuple[
 
 def process_manual_queue() -> None:
     """Process all items in the manual download queue."""
-    if job_running.is_set():
-        logger.info("A job is already running, cannot process manual queue")
-        return
-
-    job_running.set()
+    with job_lock:
+        if job_running.is_set():
+            logger.info("A job is already running, cannot process manual queue")
+            return
+        job_running.set()
     update_state("current_status", "processing queue")
 
     try:
@@ -660,7 +660,8 @@ def process_manual_queue() -> None:
     finally:
         update_state("current_status", "idle")
         clear_activity()
-        job_running.clear()
+        with job_lock:
+            job_running.clear()
         pause_event.clear()
         with state_lock:
             app_state["is_paused"] = False
@@ -977,10 +978,9 @@ def process_favorites() -> None:
         update_stats("last_error", value=str(e))
         update_state("current_status", "error")
     finally:
-        # Ensure we always clear the running flag and activity
+        # Ensure we always clear activity
         clear_activity()
         clear_queue()
-        job_running.clear()
         # Clear pause state when job ends
         pause_event.clear()
         with state_lock:
@@ -988,12 +988,11 @@ def process_favorites() -> None:
 
 def job() -> None:
     """Main job function that runs on schedule."""
-    if job_running.is_set():
-        logger.info("A job is already running. Skipping this execution.")
-        return
-
-    # Set the running flag first
-    job_running.set()
+    with job_lock:
+        if job_running.is_set():
+            logger.info("A job is already running. Skipping this execution.")
+            return
+        job_running.set()
     logger.info("Job started!")
 
     try:
@@ -1003,7 +1002,8 @@ def job() -> None:
     finally:
         logger.info("Job finished!")
         # Clear the running flag no matter what
-        job_running.clear()
+        with job_lock:
+            job_running.clear()
 
 
 # Graceful shutdown handling
