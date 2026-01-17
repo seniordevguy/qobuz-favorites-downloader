@@ -115,13 +115,20 @@ def get_default_stats() -> dict[str, Any]:
 
 def load_stats() -> dict[str, Any]:
     """Load stats from disk if available."""
+    default_stats = get_default_stats()
     if os.path.exists(STATS_FILE):
         try:
             with open(STATS_FILE, 'r') as f:
-                return json.load(f)
+                loaded_stats = json.load(f)
+            if not isinstance(loaded_stats, dict):
+                logger.warning("Stats file is not a JSON object; using defaults.")
+                return default_stats
+            merged_stats = default_stats.copy()
+            merged_stats.update(loaded_stats)
+            return merged_stats
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Failed to load stats from disk: {e}")
-    return get_default_stats()
+    return default_stats
 
 def save_stats(stats: dict[str, Any]) -> None:
     """Persist stats to disk."""
