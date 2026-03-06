@@ -20,10 +20,14 @@ services:
       # Optional - Web UI settings
       - ENABLE_WEB_UI=true
       - WEB_UI_PORT=5000
+      # - WEB_UI_USERNAME=admin
+      # - WEB_UI_PASSWORD=change-me-on-first-run  # Required to enable auth on a fresh install
+      # - SESSION_SECRET_KEY=replace-with-random-long-secret
+      # - SESSION_TIMEOUT_MINUTES=60
     volumes:
       # Update these paths to match your system
       - ./downloads:/downloads
-      - ./config:/config
+      - ./config:/config  # Includes /config/users.db for web UI auth persistence
     ports:
       - "5000:5000"
     restart: unless-stopped

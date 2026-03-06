@@ -24,14 +24,53 @@
         }
 
         .header {
-            text-align: center;
             color: white;
             margin-bottom: 30px;
+        }
+
+        .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .header-copy {
+            text-align: left;
         }
 
         .header h1 {
             font-size: 2.5em;
             margin-bottom: 10px;
+        }
+
+        .logout-form {
+            margin: 0;
+        }
+
+        .logout-btn {
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .warning-banner {
+            background: rgba(254, 243, 199, 0.95);
+            color: #78350f;
+            border-left: 4px solid #f59e0b;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            padding: 12px 14px;
+            font-weight: 500;
         }
 
         .dashboard {
@@ -211,6 +250,13 @@
                 opacity: 1;
             }
         }
+
+        @media (max-width: 640px) {
+            .header-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
     </style>
 </head>
 <body>
@@ -220,9 +266,23 @@
 
     <div class="container">
         <div class="header">
-            <h1>Qobuz Downloader</h1>
-            <p>Automatic favorites downloader dashboard</p>
+            <div class="header-row">
+                <div class="header-copy">
+                    <h1>Qobuz Downloader</h1>
+                    <p>Automatic favorites downloader dashboard</p>
+                </div>
+                {% if auth_enabled and current_user.is_authenticated %}
+                <form method="POST" action="/logout" class="logout-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="logout-btn" type="submit">Logout</button>
+                </form>
+                {% endif %}
+            </div>
         </div>
+
+        {% if auth_warning %}
+        <div class="warning-banner">{{ auth_warning }}</div>
+        {% endif %}
 
         <div class="dashboard">
             <div class="card">
@@ -302,13 +362,23 @@
     </div>
 
     <script>
+        const CSRF_TOKEN = "{{ csrf_token() }}";
         let countdown = 5;
         let countdownInterval;
 
         function updateStatus() {
             fetch('/api/status')
-                .then(response => response.json())
+                .then(response => {
+                    if (response.status === 401) {
+                        window.location.href = '/login';
+                        return null;
+                    }
+                    return response.json();
+                })
                 .then(data => {
+                    if (!data) {
+                        return;
+                    }
                     // Update status badge
                     const statusBadge = document.getElementById('statusBadge');
                     statusBadge.textContent = data.is_running ?
@@ -377,11 +447,21 @@
             fetch('/api/trigger', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': CSRF_TOKEN
                 }
             })
-            .then(response => response.json())
+            .then(response => {
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return null;
+                }
+                return response.json();
+            })
             .then(data => {
+                if (!data) {
+                    return;
+                }
                 showNotification(data.message, data.success);
                 if (data.success) {
                     // Force immediate status update
