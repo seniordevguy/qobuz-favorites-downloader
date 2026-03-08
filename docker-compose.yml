@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   qobuz-downloader:
     image: rgallione/qobuz-downloader:latest
