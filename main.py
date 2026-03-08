@@ -59,9 +59,10 @@ check_interval_minutes = int(os.environ.get("CHECK_INTERVAL_MINUTES", 30))
 enable_web_ui = os.environ.get("ENABLE_WEB_UI", "true").lower() == "true"
 web_ui_port = int(os.environ.get("WEB_UI_PORT", 5000))
 
-# Use a threading.Lock for thread synchronization
-job_lock = threading.Lock()
 job_running = threading.Event()
+
+# Lock for thread-safe app_state mutations
+state_lock = threading.Lock()
 
 # Shared state for web UI
 app_state = {
@@ -77,7 +78,6 @@ app_state = {
         "artists_failed": 0,
         "last_error": None
     },
-    "current_item": None,
     "favorites_count": {"tracks": 0, "albums": 0, "artists": 0}
 }
 
@@ -87,6 +87,16 @@ qobuz = QobuzDL(
     downloads_db=os.path.join(config_directory, "db"),
     folder_format="{artist}/{artist} - {album}",
 )
+
+# Cache Qobuz client initialization
+_qobuz_initialized = False
+
+def _ensure_qobuz_initialized():
+    global _qobuz_initialized
+    if not _qobuz_initialized:
+        qobuz.get_tokens()
+        qobuz.initialize_client(qobuz_email, qobuz_password, qobuz.app_id, qobuz.secrets)
+        _qobuz_initialized = True
 
 def get_user_favorites(user: qobuz_cl.User, fav_type):
     '''
@@ -127,7 +137,7 @@ def download_item(args):
         logger.error(f"Failed to download item ID {item.id}: {e}")
         return (False, item)
 
-def batch_download(qobuz_dl, user, items, is_album=True, max_workers=1, current_batch_size=10):
+def batch_download(qobuz_dl, user, items, is_album=True, executor=None, current_batch_size=10):
     """
     Download items in parallel batches with a limited number of workers
     Optimized for low-power NAS systems
@@ -135,113 +145,125 @@ def batch_download(qobuz_dl, user, items, is_album=True, max_workers=1, current_
     successful_items = []
     failed_items = []
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Create a list of tasks with all necessary information
-        tasks = [(qobuz_dl, user, item, is_album) for item in items]
+    # Create a list of tasks with all necessary information
+    tasks = [(qobuz_dl, user, item, is_album) for item in items]
 
-        # Process items in batches to avoid overwhelming the system
-        effective_batch_size = min(current_batch_size, len(items))
+    # Process items in batches to avoid overwhelming the system
+    effective_batch_size = min(current_batch_size, len(items))
 
-        for i in range(0, len(tasks), effective_batch_size):
-            batch = tasks[i:i+effective_batch_size]
-            logger.info(f"Processing batch of {len(batch)} items ({i+1}-{min(i+effective_batch_size, len(items))} of {len(items)})")
+    for i in range(0, len(tasks), effective_batch_size):
+        batch = tasks[i:i+effective_batch_size]
+        logger.info(f"Processing batch of {len(batch)} items ({i+1}-{min(i+effective_batch_size, len(items))} of {len(items)})")
 
-            # Submit all tasks in this batch
-            futures = [executor.submit(download_item, task) for task in batch]
+        # Submit all tasks in this batch
+        futures = [executor.submit(download_item, task) for task in batch]
 
-            # Process results as they complete
-            for future in futures:
-                try:
-                    success, item = future.result(timeout=600)  # 10-minute timeout per item
-                    if success:
-                        successful_items.append(item)
-                    else:
-                        failed_items.append(item)
-                except Exception as e:
-                    logger.error(f"Worker thread exception: {e}")
+        # Process results as they complete
+        for future in futures:
+            try:
+                success, item = future.result(timeout=600)  # 10-minute timeout per item
+                if success:
+                    successful_items.append(item)
+                else:
+                    failed_items.append(item)
+            except Exception as e:
+                logger.error(f"Worker thread exception: {e}")
+                with state_lock:
                     app_state["stats"]["last_error"] = str(e)
 
-            # Delay between batches to let CPU cool down (important for NAS)
-            if i + effective_batch_size < len(tasks):
-                time.sleep(3)
+        # Delay between batches to let CPU cool down (important for NAS)
+        if i + effective_batch_size < len(tasks):
+            time.sleep(3)
 
     return successful_items, failed_items
 
 def process_favorites():
+    executor = ThreadPoolExecutor(max_workers=max(max_workers_tracks, max_workers_albums, max_workers_artists))
     try:
-        app_state["current_status"] = "initializing"
+        with state_lock:
+            app_state["current_status"] = "initializing"
 
-        # initialize the Qobuz client
-        qobuz.get_tokens()
-        qobuz.initialize_client(qobuz_email, qobuz_password, qobuz.app_id, qobuz.secrets)
+        # initialize the Qobuz client (cached after first run)
+        _ensure_qobuz_initialized()
 
         # register your APP_ID
         qobuz_api.register_app(qobuz.app_id, qobuz.secrets)
         qobuz_user = qobuz_cl.User(qobuz_email, qobuz_password)
 
         # retrieve favorites
-        app_state["current_status"] = "fetching favorites"
+        with state_lock:
+            app_state["current_status"] = "fetching favorites"
         logger.info("Fetching favorite items from Qobuz...")
         favorite_tracks = get_user_favorites(qobuz_user, fav_type="tracks")
         favorite_albums = get_user_favorites(qobuz_user, fav_type="albums")
         favorite_artists = get_user_favorites(qobuz_user, fav_type="artists")
 
-        app_state["favorites_count"] = {
-            "tracks": len(favorite_tracks),
-            "albums": len(favorite_albums),
-            "artists": len(favorite_artists)
-        }
+        with state_lock:
+            app_state["favorites_count"] = {
+                "tracks": len(favorite_tracks),
+                "albums": len(favorite_albums),
+                "artists": len(favorite_artists)
+            }
 
         logger.info(f"Found {len(favorite_tracks)} tracks, {len(favorite_albums)} albums, {len(favorite_artists)} artists")
 
         # download favorites using the optimized batch method with configurable workers
         if favorite_tracks:
-            app_state["current_status"] = "downloading tracks"
+            with state_lock:
+                app_state["current_status"] = "downloading tracks"
             logger.info("Processing tracks...")
             successful_tracks, failed_tracks = batch_download(
                 qobuz, qobuz_user, favorite_tracks,
                 is_album=False,
-                max_workers=max_workers_tracks,
+                executor=executor,
                 current_batch_size=batch_size
             )
-            app_state["stats"]["tracks_downloaded"] += len(successful_tracks)
-            app_state["stats"]["tracks_failed"] += len(failed_tracks)
+            with state_lock:
+                app_state["stats"]["tracks_downloaded"] += len(successful_tracks)
+                app_state["stats"]["tracks_failed"] += len(failed_tracks)
             logger.info(f"Tracks: {len(successful_tracks)} successful, {len(failed_tracks)} failed")
 
         if favorite_albums:
-            app_state["current_status"] = "downloading albums"
+            with state_lock:
+                app_state["current_status"] = "downloading albums"
             logger.info("Processing albums...")
             successful_albums, failed_albums = batch_download(
                 qobuz, qobuz_user, favorite_albums,
                 is_album=True,
-                max_workers=max_workers_albums,
+                executor=executor,
                 current_batch_size=batch_size
             )
-            app_state["stats"]["albums_downloaded"] += len(successful_albums)
-            app_state["stats"]["albums_failed"] += len(failed_albums)
+            with state_lock:
+                app_state["stats"]["albums_downloaded"] += len(successful_albums)
+                app_state["stats"]["albums_failed"] += len(failed_albums)
             logger.info(f"Albums: {len(successful_albums)} successful, {len(failed_albums)} failed")
 
         if favorite_artists:
-            app_state["current_status"] = "downloading artists"
+            with state_lock:
+                app_state["current_status"] = "downloading artists"
             logger.info("Processing artists...")
             successful_artists, failed_artists = batch_download(
                 qobuz, qobuz_user, favorite_artists,
                 is_album=False,
-                max_workers=max_workers_artists,
+                executor=executor,
                 current_batch_size=batch_size
             )
-            app_state["stats"]["artists_downloaded"] += len(successful_artists)
-            app_state["stats"]["artists_failed"] += len(failed_artists)
+            with state_lock:
+                app_state["stats"]["artists_downloaded"] += len(successful_artists)
+                app_state["stats"]["artists_failed"] += len(failed_artists)
             logger.info(f"Artists: {len(successful_artists)} successful, {len(failed_artists)} failed")
 
-        app_state["current_status"] = "idle"
-        app_state["last_run"] = time.time()
+        with state_lock:
+            app_state["current_status"] = "idle"
+            app_state["last_run"] = time.time()
 
     except Exception as e:
         logger.error(f"Process favorites error: {e}", exc_info=True)
-        app_state["stats"]["last_error"] = str(e)
-        app_state["current_status"] = "error"
+        with state_lock:
+            app_state["stats"]["last_error"] = str(e)
+            app_state["current_status"] = "error"
     finally:
+        executor.shutdown(wait=False)
         # Ensure we always clear the running flag
         job_running.clear()
 
@@ -254,15 +276,10 @@ def job():
     # Set the running flag first
     job_running.set()
     logger.info("Job started!")
-    
-    try:
-        process_favorites()
-    except Exception as e:
-        logger.error(f"Unhandled exception in job: {e}", exc_info=True)
-    finally:
-        logger.info("Job finished!")
-        # Clear the running flag no matter what
-        job_running.clear()
+
+    process_favorites()
+
+    logger.info("Job finished!")
 
 def run_scheduler():
     """Run the scheduler in the main thread"""
@@ -280,7 +297,8 @@ def run_scheduler():
             # Update next run time for web UI
             jobs = schedule.get_jobs()
             if jobs:
-                app_state["next_run"] = jobs[0].next_run.timestamp() if jobs[0].next_run else None
+                with state_lock:
+                    app_state["next_run"] = jobs[0].next_run.timestamp() if jobs[0].next_run else None
             time.sleep(1)
     except KeyboardInterrupt:
         logger.info("Scheduler stopped by user")

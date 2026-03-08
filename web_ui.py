@@ -1,5 +1,4 @@
-from flask import Flask, render_template, jsonify, request
-import time
+from flask import Flask, render_template, jsonify
 from datetime import datetime
 import threading
 
@@ -28,8 +27,7 @@ def create_app(app_state, job_running, job_function=None):
             "next_run": format_timestamp(app_state["next_run"]),
             "next_run_timestamp": app_state["next_run"],
             "stats": app_state["stats"],
-            "favorites_count": app_state["favorites_count"],
-            "current_item": app_state["current_item"]
+            "favorites_count": app_state["favorites_count"]
         }
         return jsonify(status)
 
@@ -67,7 +65,7 @@ def create_app(app_state, job_running, job_function=None):
             return "Never"
         try:
             return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
-        except:
+        except (TypeError, ValueError, OSError):
             return "Unknown"
 
     return app
